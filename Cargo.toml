@@ -1,13 +1,17 @@
 [package]
 name = "yum-osu"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
-macroquad = "0.4.13"
+bevy = { version = "0.14", features = ["dynamic_linking"] }
+bevy_kira_audio = "0.20"
 rand = "0.8.5"
-rhythms = "0.1.0"
-rodio = "0.19.0"
+rayon = "1.10.0"
 aubio = "0.2.1"
 biquad = "0.4.2"
-rayon = "1.10.0"
+
+[profile.dev]
+opt-level = 1
+[profile.dev.package."*"]
+opt-level = 3
