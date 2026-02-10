@@ -1,6 +1,5 @@
-use crate::config::GameConfig;
 use crate::constants::*;
-use crate::structs::{Circle, FloatingText, VisualizingState};
+use crate::structs::{Circle, FloatingText};
 use macroquad::prelude::{draw_circle, is_key_pressed, mouse_position, Color, KeyCode, Vec2};
 use rand::Rng;
 
@@ -12,31 +11,29 @@ pub fn initialize_circles(
     center: Vec2,
     shrink_time: f64,
     delay: f64,
-    config: &GameConfig,
 ) -> Vec<Circle> {
-    let circle_size_multiplier = config.theme.circle_size;
+    let mut circles = Vec::with_capacity(beats.len());
 
-    beats
-        .iter()
-        .map(|&beat_time| {
-            let angle = rng.gen_range(0.0..std::f32::consts::TAU);
-            let distance = rng.gen_range(0.0..spawn_radius);
+    for &beat_time in beats {
+        let angle = rng.gen_range(0.0..std::f32::consts::TAU);
+        let distance = rng.gen_range(0.0..spawn_radius);
 
-            let position = Vec2::new(
-                center.x + distance * angle.cos(),
-                center.y + distance * angle.sin(),
-            );
+        let position = Vec2::new(
+            center.x + distance * angle.cos(),
+            center.y + distance * angle.sin(),
+        );
 
-            Circle {
-                position,
-                spawn_time: beat_time - shrink_time + delay,
-                hit_time: beat_time + delay,
-                max_radius: CIRCLE_MAX_RADIUS * circle_size_multiplier,
-                hit: false,
-                missed: false,
-            }
-        })
-        .collect()
+        circles.push(Circle {
+            position,
+            spawn_time: beat_time - shrink_time + delay,
+            hit_time: beat_time + delay,
+            max_radius: CIRCLE_MAX_RADIUS,
+            hit: false,
+            missed: false,
+        });
+    }
+
+    circles
 }
 
 /// Handle key hits with animation and feedback
@@ -125,7 +122,7 @@ pub fn calculate_spawn_radius(width: f32, height: f32) -> f32 {
 pub fn handle_missed_circles(
     circles: &mut Vec<Circle>,
     elapsed: f64,
-    vis_state: &mut VisualizingState,
+    floating_texts: &mut Vec<FloatingText>,
     shrink_time: f64,
 ) {
     for circle in circles.iter_mut().filter(|c| !c.hit && !c.missed) {
@@ -170,17 +167,27 @@ pub fn calculate_score(hit_time: f64, current_time: f64) -> i32 {
 }
 
 /// Draw animated circles with stylizing and dynamic color transitions
-pub fn draw_circles(circles: &Vec<Circle>, elapsed: f64, shrink_time: f64, config: &GameConfig) {
+pub fn draw_circles(circles: &Vec<Circle>, elapsed: f64, shrink_time: f64) {
+    // Pre-compute pulse intensity once
+    let pulse_intensity = 0.5 + (elapsed.sin() as f32) * 0.5;
+
     for circle in circles {
         let time_since_spawn = elapsed - circle.spawn_time;
 
         if (0.0..=shrink_time).contains(&time_since_spawn) && !circle.hit {
             // Shrink the circle with a smooth scaling effect
-            let scale = 1.0 - time_since_spawn / shrink_time;
-            let radius = circle.max_radius * (scale as f32);
+            let scale = 1.0 - (time_since_spawn / shrink_time) as f32;
+            let radius = circle.max_radius * scale;
+
+            // Cull circles that are too small to see
+            if radius < 1.0 {
+                continue;
+            }
+
+            // Pre-compute alpha
+            let alpha = 0.6 - scale * 0.5;
 
             // Draw an animated outline with a pulsing effect
-            let pulse_intensity = 0.5 + (elapsed.sin() as f32) * 0.5;
             draw_circle(
                 circle.position.x,
                 circle.position.y,
@@ -193,15 +200,8 @@ pub fn draw_circles(circles: &Vec<Circle>, elapsed: f64, shrink_time: f64, confi
                 ),
             );
 
-            // Use configured circle color
-            let circle_color = hex_to_color(&config.theme.circle_color).unwrap_or(NEON_BLUE);
-
-            let color = Color::new(
-                circle_color.r,
-                circle_color.g,
-                circle_color.b,
-                0.6 - (scale as f32) * 0.5,
-            );
+            // Use a predefined neon color for the circle's fill
+            let color = Color::new(0.0, 0.75, 1.0, alpha);
 
             draw_circle(circle.position.x, circle.position.y, radius, color);
 

@@ -254,8 +254,18 @@ fn handle_ready_to_play_state(
             config.clone(),
             song_name.to_string()
         );
+        let score = 0;
+        let floating_texts = Vec::with_capacity(10); // Pre-allocate with reasonable capacity
 
-        GameState::Visualizing(Box::new(vis_state))
+        GameState::Visualizing(
+            Box::new(VisualizingState {
+                beats,
+                start_time: Instant::now(),
+                circles,
+                score,
+                floating_texts,
+            })
+        )
     }
 }
 

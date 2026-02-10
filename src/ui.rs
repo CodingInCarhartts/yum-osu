@@ -98,10 +98,9 @@ pub fn draw_menu(assets: &Assets) -> Option<String> {
 
         draw_rectangle(button_x, *y_pos, button_width, button_height, button_color);
 
-        // Add glow effect around the button
-        let glow_levels = if is_hovered { 8 } else { 4 };
-        for i in 1..glow_levels {
-            let glow_alpha = (0.15 / (i as f32)) * pulse;
+        // Add glow effect around the button - reduced iterations for performance
+        for i in 1..3 {
+            let glow_alpha = 0.15 / (i as f32);
             draw_rectangle_lines(
                 button_x - (i as f32),
                 *y_pos - (i as f32),
@@ -227,17 +226,19 @@ pub fn draw_choose_audio(
                 NEON_BLUE
             );
 
-            // Add pulsing glow effect around the button
-            for glow_level in 1..3 {
-                let glow_alpha = (0.1 / (glow_level as f32)) * pulse_intensity;
-                draw_rectangle_lines(
-                    scaled_button_x - (glow_level as f32),
-                    scaled_button_y - (glow_level as f32),
-                    scaled_button_width + 2.0 * (glow_level as f32),
-                    scaled_button_height + 2.0 * (glow_level as f32),
-                    1.0,
-                    Color::new(glow_color.r, glow_color.g, glow_color.b, glow_alpha)
-                );
+            // Add pulsing glow effect around the button - only when hovered for performance
+            if is_hovered {
+                for glow_level in 1..3 {
+                    let glow_alpha = (0.1 / (glow_level as f32)) * pulse_intensity;
+                    draw_rectangle_lines(
+                        scaled_button_x - (glow_level as f32),
+                        scaled_button_y - (glow_level as f32),
+                        scaled_button_width + 2.0 * (glow_level as f32),
+                        scaled_button_height + 2.0 * (glow_level as f32),
+                        1.0,
+                        Color::new(glow_color.r, glow_color.g, glow_color.b, glow_alpha)
+                    );
+                }
             }
 
             // Extract the song name
@@ -346,8 +347,8 @@ pub fn draw_loading_bar(elapsed_time: f32, assets: &Assets, message: Option<&str
     // Progress bar
     draw_rectangle(bar_x, bar_y, bar_width * progress, bar_height, NEON_BLUE);
 
-    // Add glow effect
-    for i in 1..4 {
+    // Add glow effect - reduced iterations for performance
+    for i in 1..2 {
         let glow_alpha = 0.15 / (i as f32);
         draw_rectangle_lines(
             bar_x - (i as f32),
@@ -465,45 +466,30 @@ pub fn draw_score(score: i32, combo: u32, max_combo: u32, assets: &Assets) {
 
 /// Draw the floating texts with improved visuals
 pub fn draw_floating_texts(floating_texts: &mut Vec<FloatingText>, elapsed: f64, assets: &Assets) {
-    floating_texts.retain(|text| {
+    // Use drain filter for more efficient cleanup
+    let mut i = 0;
+    while i < floating_texts.len() {
+        let text = &floating_texts[i];
         let time_since_spawn = elapsed - text.spawn_time;
-        if time_since_spawn < text.duration {
-            let y_offset = (time_since_spawn * 40.0) as f32;
-            let alpha = 1.0 - ((time_since_spawn / text.duration) as f32).powf(2.0);
-            let scale = 1.0 + (time_since_spawn as f32 * 0.5);
 
-            let color = Color::new(text.color.0, text.color.1, text.color.2, alpha);
-
-            // Draw shadow/glow
-            draw_text_ex(
-                &text.text, 
-                text.position.x + 2.0, 
-                text.position.y - y_offset + 2.0, 
-                TextParams {
-                    font: Some(&assets.cyberpunk_font),
-                    font_size: (24.0 * scale) as u16,
-                    color: Color::new(0.0, 0.0, 0.0, alpha * 0.5),
-                    ..Default::default()
-                }
-            );
-
-            draw_text_ex(
-                &text.text, 
-                text.position.x, 
-                text.position.y - y_offset, 
-                TextParams {
-                    font: Some(&assets.cyberpunk_font),
-                    font_size: (24.0 * scale) as u16,
-                    color,
-                    ..Default::default()
-                }
-            );
-
-            true
-        } else {
-            false
+        if time_since_spawn >= text.duration {
+            floating_texts.swap_remove(i);
+            continue;
         }
-    });
+
+        let y_offset = (time_since_spawn * 30.0) as f32;
+        let alpha = 1.0 - ((time_since_spawn / text.duration) as f32);
+        let color = Color::new(1.0, 0.0, 0.0, alpha);
+
+        draw_text_ex(&text.text, text.position.x, text.position.y - y_offset, TextParams {
+            font: Some(&assets.cyberpunk_font),
+            font_size: 24,
+            color,
+            ..Default::default()
+        });
+
+        i += 1;
+    }
 }
 
 /// Draw the settings menu
