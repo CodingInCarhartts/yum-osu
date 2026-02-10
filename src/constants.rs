@@ -31,6 +31,14 @@ pub const NEON_BLUE: Color = Color::new(0.0, 0.75, 1.0, 1.0); // Neon blue for c
 pub const NEON_PURPLE: Color = Color::new(0.6, 0.0, 1.0, 1.0); // Neon purple for outlines and accents
 pub const NEON_GREEN: Color = Color::new(0.0, 1.0, 0.5, 1.0); // Neon green for success or active states
 pub const NEON_ORANGE: Color = Color::new(1.0, 0.5, 0.0, 1.0); // Neon orange for errors
+pub const NEON_CYAN: Color = Color::new(0.0, 1.0, 1.0, 1.0); // Neon cyan for highlights
+pub const NEON_YELLOW: Color = Color::new(1.0, 1.0, 0.0, 1.0); // Neon yellow for warnings and info
+pub const NEON_RED: Color = Color::new(1.0, 0.0, 0.0, 1.0); // Neon red for critical errors
+
+// Standard colors
+pub const GRAY: Color = Color::new(0.5, 0.5, 0.5, 1.0); // Gray for inactive elements
+pub const WHITE: Color = Color::new(1.0, 1.0, 1.0, 1.0); // White for text
+pub const BLACK: Color = Color::new(0.0, 0.0, 0.0, 1.0); // Black for backgrounds
 
 // Font size specific to cyberpunk-styled text
 pub const CYBERPUNK_FONT_SIZE: f32 = 24.0; // Font size for UI text (song selection, buttons, etc.)

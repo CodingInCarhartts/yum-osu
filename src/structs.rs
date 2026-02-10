@@ -7,9 +7,13 @@ use std::fs::File;
 use std::io::BufReader;
 use std::sync::mpsc;
 use std::time::Instant;
+use uuid::Uuid;
 
+use crate::accounts::User;
 use crate::analytics::{ActiveSession, Analytics};
+use crate::community::Tournament;
 use crate::config::GameConfig;
+use crate::network::Room;
 
 /// UI Assets container
 pub struct Assets {
@@ -44,6 +48,22 @@ pub enum GameState {
     SongSelection,
     /// Practice tools menu
     PracticeMenu,
+    /// Multiplayer lobby
+    MultiplayerLobby,
+    /// Login screen
+    Login,
+    /// Registration screen
+    Register,
+    /// Profile view
+    Profile,
+    /// Leaderboard
+    Leaderboard,
+    /// Friends list
+    Friends,
+    /// Community hub
+    CommunityHub,
+    /// Tournament view
+    Tournament,
     Playing,
     Settings,
     Analytics,
@@ -275,5 +295,198 @@ impl PracticeMenuState {
             .unwrap_or(3);
         let prev_idx = current_idx.saturating_sub(1);
         self.playback_speed = options[prev_idx].0;
+    }
+}
+
+/// Login state
+#[derive(Debug, Clone)]
+pub struct LoginState {
+    pub username: String,
+    pub password: String,
+    pub error_message: Option<String>,
+    pub is_registering: bool,
+}
+
+impl LoginState {
+    pub fn new() -> Self {
+        Self {
+            username: String::new(),
+            password: String::new(),
+            error_message: None,
+            is_registering: false,
+        }
+    }
+}
+
+/// Registration state
+#[derive(Debug, Clone)]
+pub struct RegisterState {
+    pub username: String,
+    pub password: String,
+    pub email: String,
+    pub confirm_password: String,
+    pub error_message: Option<String>,
+}
+
+impl RegisterState {
+    pub fn new() -> Self {
+        Self {
+            username: String::new(),
+            password: String::new(),
+            email: String::new(),
+            confirm_password: String::new(),
+            error_message: None,
+        }
+    }
+}
+
+/// Multiplayer lobby state
+#[derive(Debug, Clone)]
+pub struct MultiplayerLobbyState {
+    pub selected_room: Option<Uuid>,
+    pub room_password: String,
+    pub create_room: bool,
+    pub max_players: usize,
+    pub room_name: String,
+    pub selected_index: usize,
+}
+
+impl MultiplayerLobbyState {
+    pub fn new() -> Self {
+        Self {
+            selected_room: None,
+            room_password: String::new(),
+            create_room: false,
+            max_players: 4,
+            room_name: String::new(),
+            selected_index: 0,
+        }
+    }
+}
+
+/// Profile view state
+#[derive(Debug, Clone)]
+pub struct ProfileState {
+    pub viewing_user_id: Option<Uuid>,
+    pub selected_tab: ProfileTab,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ProfileTab {
+    Overview,
+    Stats,
+    Achievements,
+    Scores,
+}
+
+impl ProfileState {
+    pub fn new() -> Self {
+        Self {
+            viewing_user_id: None,
+            selected_tab: ProfileTab::Overview,
+        }
+    }
+}
+
+/// Leaderboard state
+#[derive(Debug, Clone)]
+pub struct LeaderboardState {
+    pub selected_tab: LeaderboardTab,
+    pub country_filter: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum LeaderboardTab {
+    Global,
+    Country,
+    Friends,
+}
+
+impl LeaderboardState {
+    pub fn new() -> Self {
+        Self {
+            selected_tab: LeaderboardTab::Global,
+            country_filter: None,
+        }
+    }
+}
+
+/// Friends list state
+#[derive(Debug, Clone)]
+pub struct FriendsState {
+    pub selected_index: usize,
+    pub searching: bool,
+    pub search_query: String,
+}
+
+impl FriendsState {
+    pub fn new() -> Self {
+        Self {
+            selected_index: 0,
+            searching: false,
+            search_query: String::new(),
+        }
+    }
+}
+
+/// Community hub state
+#[derive(Debug, Clone)]
+pub struct CommunityHubState {
+    pub selected_tab: CommunityTab,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum CommunityTab {
+    Tournaments,
+    Chat,
+    Events,
+}
+
+impl CommunityHubState {
+    pub fn new() -> Self {
+        Self {
+            selected_tab: CommunityTab::Tournaments,
+        }
+    }
+}
+
+/// Tournament view state
+#[derive(Debug, Clone)]
+pub struct TournamentState {
+    pub tournament_id: Option<Uuid>,
+    pub is_participating: bool,
+}
+
+impl TournamentState {
+    pub fn new() -> Self {
+        Self {
+            tournament_id: None,
+            is_participating: false,
+        }
+    }
+}
+
+/// Current user session
+#[derive(Debug, Clone)]
+pub struct UserSession {
+    pub user_id: Uuid,
+    pub username: String,
+    pub token: String,
+    pub expires_at: std::time::SystemTime,
+}
+
+impl UserSession {
+    pub fn new(user_id: Uuid, username: String, token: String) -> Self {
+        Self {
+            user_id,
+            username,
+            token,
+            expires_at: std::time::SystemTime::now()
+                + std::time::Duration::from_secs(30 * 24 * 60 * 60), // 30 days
+        }
+    }
+
+    pub fn is_expired(&self) -> bool {
+        std::time::SystemTime::now() > self.expires_at
     }
 }
