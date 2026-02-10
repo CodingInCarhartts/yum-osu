@@ -1,5 +1,6 @@
 // src/analytics.rs
 
+use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -7,7 +8,7 @@ use std::path::Path;
 use std::time::SystemTime;
 
 /// Analytics data for tracking player performance
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Resource)]
 pub struct Analytics {
     /// Unique player identifier
     pub player_id: String,
@@ -655,7 +656,7 @@ fn generate_player_id() -> String {
 }
 
 /// Analytics display state
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Resource)]
 pub struct AnalyticsState {
     /// Current view tab
     pub current_view: AnalyticsView,

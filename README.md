@@ -15,7 +15,7 @@
 </div>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/macroquad-0.4-ff69b4" alt="Macroquad">
+  <img src="https://img.shields.io/badge/bevy-0.15-ff69b4" alt="Bevy">
   <img src="https://img.shields.io/badge/rust-2021-orange" alt="Rust Edition">
 </p>
 
@@ -222,7 +222,7 @@ yum-osu/
 | Technology | Purpose |
 |------------|---------|
 | [Rust](https://www.rust-lang.org/) | Systems programming language |
-| [Macroquad](https://macroquad.rs/) | Lightweight game engine for rendering |
+| [Bevy](https://bevyengine.org/) | Data-driven game engine with ECS architecture |
 | [Rodio](https://github.com/RustAudio/rodio) | Audio playback |
 | [aubio](https://aubio.org/) | Audio analysis and beat detection |
 | [biquad](https://github.com/korken89/biquad-rs) | Audio filtering (low-pass for kick detection) |

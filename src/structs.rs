@@ -1,22 +1,23 @@
 // src/structs.rs
 
-use macroquad::prelude::Vec2;
-use macroquad::text::Font;
+use bevy::prelude::*;
 use rodio::Decoder;
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::mpsc;
 use std::time::Instant;
 
-use crate::analytics::{ActiveSession, Analytics};
+use crate::analytics::ActiveSession;
 use crate::config::GameConfig;
 
 /// UI Assets container
-pub struct Assets {
-    pub cyberpunk_font: Font,
+#[derive(Resource, Clone)]
+pub struct GameAssets {
+    pub cyberpunk_font: Handle<Font>,
 }
 
 /// Song selection state
+#[derive(Debug, Clone, Resource)]
 pub struct SongSelectionState {
     pub scroll_pos: f32,
     pub selected_song: Option<String>,
@@ -24,6 +25,12 @@ pub struct SongSelectionState {
     pub practice_mode: bool,
     /// Selected playback speed for practice mode
     pub playback_speed: f32,
+}
+
+impl Default for SongSelectionState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SongSelectionState {
@@ -39,6 +46,7 @@ impl SongSelectionState {
 }
 
 /// Main game state enum
+#[derive(Debug, Clone)]
 pub enum GameState {
     Menu,
     SongSelection,
@@ -61,8 +69,15 @@ pub enum GameState {
     End(Box<EndState>),
 }
 
+impl Default for GameState {
+    fn default() -> Self {
+        GameState::Menu
+    }
+}
+
 /// Game circle structure
-pub struct Circle {
+#[derive(Debug, Clone)]
+pub struct GameCircle {
     pub position: Vec2,
     pub spawn_time: f64,
     pub hit_time: f64,
@@ -72,6 +87,7 @@ pub struct Circle {
 }
 
 /// Floating text for feedback
+#[derive(Debug, Clone)]
 pub struct FloatingText {
     pub text: String,
     pub position: Vec2,
@@ -82,10 +98,11 @@ pub struct FloatingText {
 }
 
 /// Visualizing/gameplay state
+#[derive(Debug, Clone)]
 pub struct VisualizingState {
     pub beats: Vec<f64>,
     pub start_time: Instant,
-    pub circles: Vec<Circle>,
+    pub circles: Vec<GameCircle>,
     pub score: i32,
     pub floating_texts: Vec<FloatingText>,
     /// Current game configuration
@@ -110,7 +127,7 @@ impl VisualizingState {
     /// Create new visualizing state
     pub fn new(
         beats: Vec<f64>,
-        circles: Vec<Circle>,
+        circles: Vec<GameCircle>,
         config: GameConfig,
         song_name: String,
     ) -> Self {
@@ -181,6 +198,7 @@ impl VisualizingState {
 }
 
 /// End state for results screen
+#[derive(Debug, Clone)]
 pub struct EndState {
     /// Final score
     pub score: i32,
@@ -207,7 +225,7 @@ pub struct EndState {
 }
 
 /// Practice menu state
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Resource)]
 pub struct PracticeMenuState {
     /// Selected song
     pub selected_song: Option<String>,
@@ -225,6 +243,12 @@ pub struct PracticeMenuState {
     pub loop_end: Option<f64>,
     /// Selected menu item
     pub selected_index: usize,
+}
+
+impl Default for PracticeMenuState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PracticeMenuState {
@@ -276,4 +300,72 @@ impl PracticeMenuState {
         let prev_idx = current_idx.saturating_sub(1);
         self.playback_speed = options[prev_idx].0;
     }
+}
+
+/// Resource to hold the current game state
+#[derive(Resource, Default)]
+pub struct GameStateResource {
+    pub state: GameState,
+    pub selected_song: String,
+    pub songs: Vec<String>,
+}
+
+/// Resource to hold audio sink
+#[derive(Resource)]
+pub struct GameAudioSink {
+    pub sink: rodio::Sink,
+}
+
+/// Resource to hold timing information
+#[derive(Resource)]
+pub struct GameTime {
+    pub start_time: Instant,
+    pub elapsed: f64,
+}
+
+impl Default for GameTime {
+    fn default() -> Self {
+        Self {
+            start_time: Instant::now(),
+            elapsed: 0.0,
+        }
+    }
+}
+
+/// Resource for loading data - stores only the beats once loaded
+#[derive(Resource)]
+pub struct LoadingData {
+    pub beats: Option<Vec<f64>>,
+    pub start_time: Instant,
+    pub song_path: String,
+}
+
+impl Default for LoadingData {
+    fn default() -> Self {
+        Self {
+            beats: None,
+            start_time: Instant::now(),
+            song_path: String::new(),
+        }
+    }
+}
+
+/// Resource for ready to play data
+#[derive(Resource)]
+pub struct ReadyToPlayData {
+    pub beats: Vec<f64>,
+    pub ready_time: Instant,
+}
+
+/// Resource for visualizing data
+#[derive(Resource)]
+pub struct VisualizingData {
+    pub state: VisualizingState,
+    pub start_time: Instant,
+}
+
+/// Resource for end data
+#[derive(Resource)]
+pub struct EndData {
+    pub state: EndState,
 }

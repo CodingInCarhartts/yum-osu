@@ -8,7 +8,7 @@ license = "MIT"
 repository = "https://github.com/Yumshot/yum-osu"
 
 [dependencies]
-macroquad = "0.4"
+bevy = { version = "0.15", features = ["dynamic_linking"] }
 rand = "0.8.5"
 rodio = "0.17"
 aubio = "0.2.1"
