@@ -1,4 +1,8 @@
-<h3 align="center">Yum-OSU!</h3>
+<h1 align="center">🎵 Yum-OSU!</h1>
+
+<p align="center">
+  <strong>A cyberpunk-styled rhythm game inspired by OSU!</strong>
+</p>
 
 <div align="center">
 
@@ -6,90 +10,197 @@
 [![GitHub Issues](https://img.shields.io/github/issues/Yumshot/yum-osu.svg)](https://github.com/Yumshot/yum-osu/issues)
 [![GitHub Pull Requests](https://img.shields.io/github/issues-pr/Yumshot/yum-osu.svg)](https://github.com/Yumshot/yum-osu/pulls)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](/LICENSE)
+[![Rust](https://img.shields.io/badge/rust-%23000000.svg?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 
 </div>
 
----
-
-<p align="center"> Get your groove on!
-    <br>
+<p align="center">
+  <img src="https://img.shields.io/badge/macroquad-0.4-ff69b4" alt="Macroquad">
+  <img src="https://img.shields.io/badge/rust-2021-orange" alt="Rust Edition">
 </p>
 
-## 📝 Table of Contents
+---
+
+## 📖 Table of Contents
 
 - [About](#about)
-- [Getting Started](#getting_started)
-- [Deployment](#deployment)
-- [Usage](#usage)
-- [Built Using](#built_using)
-- [TODO](../TODO.md)
-- [Contributing](../CONTRIBUTING.md)
+- [Features](#features)
+- [Screenshots](#screenshots)
+- [Getting Started](#getting-started)
+- [Controls](#controls)
+- [Gameplay](#gameplay)
+- [Project Structure](#project-structure)
+- [Built With](#built-with)
 - [Authors](#authors)
-- [Acknowledgments](#acknowledgement)
+- [Acknowledgments](#acknowledgments)
 
-## 🧐 About <a name = "about"></a>
-**Yum-OSU!** is a rhythm game inspired by OSU!, designed to provide an engaging and customizable experience for rhythm game enthusiasts. Players can test their timing and precision across user-generated beatmaps, customize their gameplay with skins, and participate in ranked competitions. The game features a built-in beatmap editor for players to create and share their own tracks, emphasizing community-driven content and creative gameplay.
+---
 
-## 🏁 Getting Started <a name = "getting_started"></a>
+## 🎮 About <a name="about"></a>
 
-These instructions will help you get **Yum-OSU!** up and running on your local machine for development and testing purposes. See [deployment](#deployment) for notes on how to install and play the game.
+**Yum-OSU!** is a rhythm game built in Rust with a sleek cyberpunk aesthetic. Players hit circles that shrink to the beat of the music, testing their timing and precision. The game features automatic beat detection from audio files, creating dynamic gameplay from any song.
+
+The game uses **beat detection algorithms** to analyze audio files in real-time and generate hit circles that synchronize with the music's rhythm.
+
+---
+
+## ✨ Features <a name="features"></a>
+
+- 🎵 **Automatic Beat Detection** - Analyzes audio files using aubio to detect kick drums and beats
+- 🎨 **Cyberpunk Visual Style** - Neon colors, glowing effects, and futuristic UI
+- 🎶 **Dynamic Song Loading** - Load any MP3 file from the assets folder
+- 📊 **Real-time Scoring** - Score points based on hit accuracy (300/100/50)
+- ⚡ **Smooth Animations** - Circles shrink smoothly with pulsing glow effects
+- 🎯 **Precision Gameplay** - Test your timing with millisecond-accurate hit detection
+
+---
+
+## 📸 Screenshots <a name="screenshots"></a>
+
+> _Screenshots coming soon!_
+
+The game features:
+- A neon-styled main menu with glowing buttons
+- Song selection screen with scrolling playlist
+- Loading screen with animated progress bar
+- Gameplay with shrinking circles and hit feedback
+
+---
+
+## 🚀 Getting Started <a name="getting-started"></a>
 
 ### Prerequisites
-To develop or run **Yum-OSU!**, you’ll need Rust installed on your machine. Below are the steps to set it up:
 
-#### Software Requirements:
-1. **Rust**: Install Rust by following the instructions on the [Rust official website](https://www.rust-lang.org/tools/install).
+- **Rust** (latest stable version) - [Install Rust](https://www.rust-lang.org/tools/install)
+- **System Dependencies** (for audio processing):
+  - On Ubuntu/Debian: `sudo apt-get install libasound2-dev`
+  - On macOS: `brew install pkg-config`
+  - On Windows: No additional dependencies required
 
-#### Rust Dependencies:
-Ensure your `Cargo.toml` file includes the following dependencies:
+### Installation
 
-```toml
-[dependencies]
-macroquad = "0.4.13"  # Game engine for rendering and input
-rand = "0.8.5"        # Random number generation
-rhythms = "0.1.0"     # Core rhythm handling library
-rodio = "0.19.0"      # Audio playback
-aubio = "0.2.1"       # Audio analysis for beat detection
-biquad = "0.4.2"      # Audio filtering
-rayon = "1.10.0"      # Parallelism for performance
-```
-
-#### Installation Steps:
-1. **Clone the repository** and navigate to the project directory:
+1. **Clone the repository:**
    ```bash
    git clone https://github.com/Yumshot/yum-osu
    cd yum-osu
    ```
 
-2. **Build and run the project** using Cargo:
+2. **Build the project:**
    ```bash
-   cargo run
+   cargo build --release
    ```
 
-These steps will set up your environment, and the game will automatically start once built.
+3. **Run the game:**
+   ```bash
+   cargo run --release
+   ```
 
-## 🎈 Usage <a name="usage"></a>
-As a developer, you can run the game locally using Cargo. After cloning the repository and installing the dependencies, simply run the game using:
-
-```bash
-cargo run
-```
-
-The game will launch, and you can play it while testing or modifying features.
-
-## 🚀 Deployment <a name = "deployment"></a>
-To deploy and run **Yum-OSU!** locally:
-1. Ensure Rust is installed and up-to-date.
-2. Clone the repository and build the game with `cargo run`.
-3. The game will automatically start, allowing you to play.
-
-## ⛏️ Built Using <a name = "built_using"></a>
-- [Rust](https://www.rust-lang.org/tools/install) - A systems programming language for writing fast, reliable, and efficient code.
-
-## ✍️ Authors <a name = "authors"></a>
-
-- [@Yumshot](https://github.com/Yumshot) - Idea & Initial work
+> **Note:** Use `--release` flag for optimal performance. The game uses audio processing that benefits from release optimizations.
 
 ---
 
-Let me know if you'd like any further changes!
+## 🎮 Controls <a name="controls"></a>
+
+| Key | Action |
+|-----|--------|
+| `A` or `S` | Hit the circle when it shrinks to center |
+| `↑` / `↓` | Scroll through song list |
+| `Escape` | Exit to main menu (during gameplay) |
+| `Enter` / `Click` | Select menu options |
+
+### How to Play
+
+1. Click **"Start Game"** from the main menu
+2. Select a song from the list
+3. Wait for the countdown
+4. Press **A** or **S** when the shrinking circle reaches the center
+5. Time your hits perfectly for maximum score!
+
+---
+
+## 🎯 Gameplay <a name="gameplay"></a>
+
+### Scoring System
+
+| Timing | Points | Feedback |
+|--------|--------|----------|
+| < 0.1s | 300 | Perfect! |
+| < 0.3s | 100 | Good |
+| < 0.5s | 50 | Okay |
+| Miss | 0 | Miss |
+
+### Adding Your Own Songs
+
+1. Place your `.mp3` files in `src/assets/music/`
+2. Restart the game
+3. Your songs will appear in the song selection menu
+
+---
+
+## 📁 Project Structure <a name="project-structure"></a>
+
+```
+yum-osu/
+├── src/
+│   ├── main.rs           # Entry point and game state machine
+│   ├── game.rs           # Gameplay logic, circles, scoring
+│   ├── ui.rs             # UI rendering (menu, song select, HUD)
+│   ├── audio.rs          # Beat detection and audio analysis
+│   ├── structs.rs        # Data structures and game state
+│   ├── constants.rs      # Game constants and styling
+│   └── assets/
+│       ├── music/        # MP3 files for gameplay
+│       ├── images/       # UI images and textures
+│       └── fonts/        # Custom fonts
+├── Cargo.toml            # Rust dependencies
+└── README.md             # This file
+```
+
+### Key Modules
+
+- **`main.rs`** - Game loop and state management (Menu → Song Select → Loading → Gameplay)
+- **`game.rs`** - Circle spawning, hit detection, score calculation
+- **`ui.rs`** - All UI rendering including menus, buttons, and HUD elements
+- **`audio.rs`** - Audio file processing and beat detection using aubio
+- **`structs.rs`** - Core data structures (GameState, Circle, Assets, etc.)
+- **`constants.rs`** - Styling constants including cyberpunk color palette
+
+---
+
+## 🛠️ Built With <a name="built-with"></a>
+
+| Technology | Purpose |
+|------------|---------|
+| [Rust](https://www.rust-lang.org/) | Systems programming language |
+| [Macroquad](https://macroquad.rs/) | Lightweight game engine for rendering |
+| [Rodio](https://github.com/RustAudio/rodio) | Audio playback |
+| [aubio](https://aubio.org/) | Audio analysis and beat detection |
+| [biquad](https://github.com/korken89/biquad-rs) | Audio filtering (low-pass for kick detection) |
+| [rayon](https://github.com/rayon-rs/rayon) | Data parallelism |
+| [rand](https://github.com/rust-random/rand) | Random number generation |
+
+---
+
+## ✍️ Authors <a name="authors"></a>
+
+- **[@Yumshot](https://github.com/Yumshot)** - Creator & Developer
+
+---
+
+## 🙏 Acknowledgments <a name="acknowledgments"></a>
+
+- Inspired by [OSU!](https://osu.ppy.sh/) - the popular rhythm game
+- Cyberpunk color palette inspired by synthwave aesthetics
+- Beat detection powered by [aubio](https://aubio.org/) library
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License.
+
+---
+
+<p align="center">
+  <strong>Get your groove on! 🎵</strong>
+</p>
