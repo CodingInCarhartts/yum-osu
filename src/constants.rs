@@ -35,6 +35,41 @@ pub const NEON_ORANGE: Color = Color::new(1.0, 0.5, 0.0, 1.0); // Neon orange fo
 // Font size specific to cyberpunk-styled text
 pub const CYBERPUNK_FONT_SIZE: f32 = 24.0; // Font size for UI text (song selection, buttons, etc.)
 
+// UI Constants
+pub const BUTTON_WIDTH: f32 = 250.0;
+pub const BUTTON_HEIGHT: f32 = 50.0;
+pub const BUTTON_SPACING: f32 = 20.0;
+pub const TAB_HEIGHT: f32 = 40.0;
+pub const SLIDER_WIDTH: f32 = 200.0;
+pub const SLIDER_HEIGHT: f32 = 10.0;
+
+// Analytics colors
+pub const ACCENT_COLOR: Color = NEON_CYAN;
+pub const SUCCESS_COLOR: Color = NEON_GREEN;
+pub const WARNING_COLOR: Color = NEON_YELLOW;
+pub const ERROR_COLOR: Color = NEON_ORANGE;
+
+// Grade colors
+pub const GRADE_SS_COLOR: Color = Color::new(1.0, 0.84, 0.0, 1.0);
+pub const GRADE_S_COLOR: Color = Color::new(1.0, 0.5, 0.0, 1.0);
+pub const GRADE_A_COLOR: Color = NEON_GREEN;
+pub const GRADE_B_COLOR: Color = NEON_BLUE;
+pub const GRADE_C_COLOR: Color = NEON_PURPLE;
+pub const GRADE_D_COLOR: Color = NEON_PINK;
+pub const GRADE_F_COLOR: Color = Color::new(1.0, 0.0, 0.0, 1.0);
+
+// Practice mode constants
+pub const MIN_PLAYBACK_SPEED: f32 = 0.25;
+pub const MAX_PLAYBACK_SPEED: f32 = 2.0;
+pub const SPEED_STEP: f32 = 0.25;
+
+// Combo milestones for visual effects
+pub const COMBO_MILESTONES: [u32; 5] = [10, 25, 50, 100, 200];
+
+// Animation constants
+pub const PULSE_SPEED: f32 = 2.0;
+pub const GLOW_INTENSITY: f32 = 0.5;
+
 pub fn window_conf() -> Conf {
     Conf {
         window_title: "YumOsu!".to_owned(),
@@ -50,4 +85,41 @@ pub fn window_conf() -> Conf {
         },
         ..Default::default()
     }
+}
+
+/// Get grade color based on grade string
+pub fn get_grade_color(grade: &str) -> Color {
+    match grade {
+        "SS" => GRADE_SS_COLOR,
+        "S" => GRADE_S_COLOR,
+        "A" => GRADE_A_COLOR,
+        "B" => GRADE_B_COLOR,
+        "C" => GRADE_C_COLOR,
+        "D" => GRADE_D_COLOR,
+        _ => GRADE_F_COLOR,
+    }
+}
+
+/// Hex string to Color conversion
+pub fn hex_to_color(hex: &str) -> Option<Color> {
+    let hex = hex.trim_start_matches('#');
+    if hex.len() != 6 {
+        return None;
+    }
+
+    let r = u8::from_str_radix(&hex[0..2], 16).ok()? as f32 / 255.0;
+    let g = u8::from_str_radix(&hex[2..4], 16).ok()? as f32 / 255.0;
+    let b = u8::from_str_radix(&hex[4..6], 16).ok()? as f32 / 255.0;
+
+    Some(Color::new(r, g, b, 1.0))
+}
+
+/// Color to hex string conversion
+pub fn color_to_hex(color: Color) -> String {
+    format!(
+        "#{:02X}{:02X}{:02X}",
+        (color.r * 255.0) as u8,
+        (color.g * 255.0) as u8,
+        (color.b * 255.0) as u8
+    )
 }
