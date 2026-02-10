@@ -160,11 +160,11 @@ fn handle_ready_to_play_state(
             COUNTDOWN_DURATION // Pass the delay here
         );
         let score = 0;
-        let floating_texts = Vec::new();
+        let floating_texts = Vec::with_capacity(10); // Pre-allocate with reasonable capacity
 
         GameState::Visualizing(
             Box::new(VisualizingState {
-                beats: beats.clone(),
+                beats,
                 start_time: Instant::now(),
                 circles,
                 score,

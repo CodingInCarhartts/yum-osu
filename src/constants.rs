@@ -31,17 +31,23 @@ pub const NEON_BLUE: Color = Color::new(0.0, 0.75, 1.0, 1.0); // Neon blue for c
 pub const NEON_PURPLE: Color = Color::new(0.6, 0.0, 1.0, 1.0); // Neon purple for outlines and accents
 pub const NEON_GREEN: Color = Color::new(0.0, 1.0, 0.5, 1.0); // Neon green for success or active states
 pub const NEON_ORANGE: Color = Color::new(1.0, 0.5, 0.0, 1.0); // Neon orange for errors
-                                                               
+
 // Font size specific to cyberpunk-styled text
 pub const CYBERPUNK_FONT_SIZE: f32 = 24.0; // Font size for UI text (song selection, buttons, etc.)
 
 pub fn window_conf() -> Conf {
     Conf {
         window_title: "YumOsu!".to_owned(),
-        window_width: 800,
-        window_height: 600,
-        window_resizable: false,
+        window_width: 1280,
+        window_height: 720,
+        window_resizable: true,
         fullscreen: false,
+        high_dpi: true,
+        platform: miniquad::conf::Platform {
+            framebuffer_alpha: false,
+            swap_interval: Some(1), // Enable VSync
+            ..Default::default()
+        },
         ..Default::default()
     }
 }

@@ -1,6 +1,6 @@
-use crate::structs::{ Circle, FloatingText };
 use crate::constants::*;
-use macroquad::prelude::{ Vec2, KeyCode, mouse_position, is_key_pressed, draw_circle, Color };
+use crate::structs::{Circle, FloatingText};
+use macroquad::prelude::{draw_circle, is_key_pressed, mouse_position, Color, KeyCode, Vec2};
 use rand::Rng;
 
 /// Initialize circles for a game with animations
@@ -10,29 +10,30 @@ pub fn initialize_circles(
     spawn_radius: f32,
     center: Vec2,
     shrink_time: f64,
-    delay: f64
+    delay: f64,
 ) -> Vec<Circle> {
-    beats
-        .iter()
-        .map(|&beat_time| {
-            let angle = rng.gen_range(0.0..std::f32::consts::TAU);
-            let distance = rng.gen_range(0.0..spawn_radius);
+    let mut circles = Vec::with_capacity(beats.len());
 
-            let position = Vec2::new(
-                center.x + distance * angle.cos(),
-                center.y + distance * angle.sin()
-            );
+    for &beat_time in beats {
+        let angle = rng.gen_range(0.0..std::f32::consts::TAU);
+        let distance = rng.gen_range(0.0..spawn_radius);
 
-            Circle {
-                position,
-                spawn_time: beat_time - shrink_time + delay,
-                hit_time: beat_time + delay,
-                max_radius: CIRCLE_MAX_RADIUS,
-                hit: false,
-                missed: false,
-            }
-        })
-        .collect()
+        let position = Vec2::new(
+            center.x + distance * angle.cos(),
+            center.y + distance * angle.sin(),
+        );
+
+        circles.push(Circle {
+            position,
+            spawn_time: beat_time - shrink_time + delay,
+            hit_time: beat_time + delay,
+            max_radius: CIRCLE_MAX_RADIUS,
+            hit: false,
+            missed: false,
+        });
+    }
+
+    circles
 }
 
 /// Handle key hits with animation and feedback
@@ -71,7 +72,7 @@ pub fn handle_missed_circles(
     circles: &mut Vec<Circle>,
     elapsed: f64,
     floating_texts: &mut Vec<FloatingText>,
-    shrink_time: f64
+    shrink_time: f64,
 ) {
     for circle in circles.iter_mut().filter(|c| !c.hit && !c.missed) {
         let time_since_spawn = elapsed - circle.spawn_time;
@@ -103,30 +104,40 @@ pub fn calculate_score(hit_time: f64, current_time: f64) -> i32 {
 
 /// Draw animated circles with stylizing and dynamic color transitions
 pub fn draw_circles(circles: &Vec<Circle>, elapsed: f64, shrink_time: f64) {
+    // Pre-compute pulse intensity once
+    let pulse_intensity = 0.5 + (elapsed.sin() as f32) * 0.5;
+
     for circle in circles {
         let time_since_spawn = elapsed - circle.spawn_time;
 
         if (0.0..=shrink_time).contains(&time_since_spawn) && !circle.hit {
             // Shrink the circle with a smooth scaling effect
-            let scale = 1.0 - time_since_spawn / shrink_time;
-            let radius = circle.max_radius * (scale as f32);
+            let scale = 1.0 - (time_since_spawn / shrink_time) as f32;
+            let radius = circle.max_radius * scale;
+
+            // Cull circles that are too small to see
+            if radius < 1.0 {
+                continue;
+            }
+
+            // Pre-compute alpha
+            let alpha = 0.6 - scale * 0.5;
 
             // Draw an animated outline with a pulsing effect
-            let pulse_intensity = 0.5 + (elapsed.sin() as f32) * 0.5;
             draw_circle(
                 circle.position.x,
                 circle.position.y,
                 radius + OUTLINE_THICKNESS,
-                Color::new(OUTLINE_COLOR.r, OUTLINE_COLOR.g, OUTLINE_COLOR.b, pulse_intensity)
+                Color::new(
+                    OUTLINE_COLOR.r,
+                    OUTLINE_COLOR.g,
+                    OUTLINE_COLOR.b,
+                    pulse_intensity,
+                ),
             );
 
             // Use a predefined neon color for the circle's fill
-            let color = Color::new(
-                0.0, // Red channel (no red)
-                0.75, // Green channel (neon green/blue)
-                1.0, // Blue channel (maximum neon blue)
-                0.6 - (scale as f32) * 0.5 // Alpha channel: fade the alpha as it shrinks
-            );
+            let color = Color::new(0.0, 0.75, 1.0, alpha);
 
             draw_circle(circle.position.x, circle.position.y, radius, color);
         }

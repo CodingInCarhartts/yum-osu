@@ -1,8 +1,8 @@
-use rodio::{ Decoder, Source };
+use aubio::{Onset, OnsetMode};
+use biquad::{Biquad, Coefficients, DirectForm1, ToHertz, Type as FilterType, Q_BUTTERWORTH_F32};
+use rodio::{Decoder, Source};
 use std::fs::File;
 use std::io::BufReader;
-use aubio::{ Onset, OnsetMode };
-use biquad::{ Biquad, Coefficients, DirectForm1, ToHertz, Type as FilterType, Q_BUTTERWORTH_F32 };
 
 /// Read an audio file and find the times of the kick beats
 pub fn gather_beats(path: &str) -> Vec<f64> {
@@ -37,25 +37,31 @@ fn detect_kick_beats(samples: &[f32], sample_rate: u32) -> Vec<f64> {
     let q_factor = 1.0; // Narrower Q factor for sharper filtering
 
     // Use a low-pass filter instead of band-pass
-    let lowpass_coefficients = Coefficients::<f32>
-        ::from_params(FilterType::LowPass, sample_rate.hz(), cutoff_freq.hz(), q_factor)
-        .unwrap();
+    let lowpass_coefficients = Coefficients::<f32>::from_params(
+        FilterType::LowPass,
+        sample_rate.hz(),
+        cutoff_freq.hz(),
+        q_factor,
+    )
+    .unwrap();
 
     let mut lowpass_filter = DirectForm1::<f32>::new(lowpass_coefficients);
 
-    // Apply the low-pass filter to the samples
-    let filtered_samples: Vec<f32> = samples
-        .iter()
-        .map(|&sample| lowpass_filter.run(sample))
-        .collect();
+    // Apply the low-pass filter to the samples - use with_capacity for optimization
+    let mut filtered_samples = Vec::with_capacity(samples.len());
+    for &sample in samples {
+        filtered_samples.push(lowpass_filter.run(sample));
+    }
 
     // Use Energy mode instead of RMS (since Rms doesn't exist in your library)
     let mut onset = Onset::new(OnsetMode::Energy, buffer_size, hop_size, sample_rate).unwrap();
-    
+
     onset.set_threshold(0.4); // Lower the threshold to catch softer bass hits
     onset.set_silence(-60.0); // Adjust for quieter kicks
 
-    let mut beats = Vec::new();
+    // Pre-allocate beats vector with estimated capacity
+    let estimated_beats = samples.len() / (hop_size * 2); // Estimate beat count
+    let mut beats = Vec::with_capacity(estimated_beats);
     let mut buffer = vec![0.0; buffer_size];
     let mut position = 0;
 
@@ -77,6 +83,3 @@ fn detect_kick_beats(samples: &[f32], sample_rate: u32) -> Vec<f64> {
 
     beats
 }
-
-
-
