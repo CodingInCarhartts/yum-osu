@@ -1,7 +1,13 @@
 use crate::constants::*;
-use crate::structs::{Circle, FloatingText};
-use macroquad::prelude::{draw_circle, is_key_pressed, mouse_position, Color, KeyCode, Vec2};
+use crate::structs::{FloatingText, GameCircle, VisualizingState};
+use bevy::prelude::*;
 use rand::Rng;
+
+/// Component marker for game circles
+#[derive(Component)]
+pub struct CircleComponent {
+    pub circle_index: usize,
+}
 
 /// Initialize circles for a game with animations
 pub fn initialize_circles(
@@ -11,7 +17,8 @@ pub fn initialize_circles(
     center: Vec2,
     shrink_time: f64,
     delay: f64,
-) -> Vec<Circle> {
+    _config: &crate::config::GameConfig,
+) -> Vec<GameCircle> {
     let mut circles = Vec::with_capacity(beats.len());
 
     for &beat_time in beats {
@@ -23,7 +30,7 @@ pub fn initialize_circles(
             center.y + distance * angle.sin(),
         );
 
-        circles.push(Circle {
+        circles.push(GameCircle {
             position,
             spawn_time: beat_time - shrink_time + delay,
             hit_time: beat_time + delay,
@@ -36,75 +43,13 @@ pub fn initialize_circles(
     circles
 }
 
-/// Handle key hits with animation and feedback
-pub fn handle_key_hits(
-    circles: &mut Vec<Circle>,
-    elapsed: f64,
-    vis_state: &mut VisualizingState,
-    shrink_time: f64,
-    config: &GameConfig,
-) {
-    let mouse_pos: Vec2 = mouse_position().into();
-
-    // Check key presses using configured keys
-    let primary_pressed = is_key_pressed(config.key_bindings.primary_hit_key());
-    let secondary_pressed = is_key_pressed(config.key_bindings.secondary_hit_key());
-    let key_pressed = primary_pressed || secondary_pressed;
-
-    if !key_pressed {
-        return;
-    }
-
-    // Find the closest hittable circle
-    let mut best_circle_idx: Option<usize> = None;
-    let mut best_distance = f32::MAX;
-
-    for (idx, circle) in circles.iter().enumerate() {
-        if circle.hit || circle.missed {
-            continue;
-        }
-
-        if let Some(radius) = circle_radius(circle, elapsed, shrink_time) {
-            let distance = mouse_pos.distance(circle.position);
-            if distance < radius && distance < best_distance {
-                best_distance = distance;
-                best_circle_idx = Some(idx);
-            }
-        }
-    }
-
-    // Process the hit
-    if let Some(idx) = best_circle_idx {
-        let circle = &mut circles[idx];
-        circle.hit = true;
-
-        let hit_time_diff = (elapsed - circle.hit_time).abs();
-        let points = calculate_score_from_timing(hit_time_diff);
-
-        // Record the hit with timing
-        let timing_ms = (hit_time_diff * 1000.0) as f32;
-        vis_state.record_hit(points, timing_ms);
-
-        // Add floating text
-        let (text, color) = match points {
-            300 => ("Perfect!", (0.0, 1.0, 0.5)),
-            100 => ("Good!", (0.0, 0.75, 1.0)),
-            50 => ("Okay", (1.0, 1.0, 0.0)),
-            _ => ("Miss", (1.0, 0.0, 0.0)),
-        };
-
-        vis_state.floating_texts.push(FloatingText {
-            text: text.to_string(),
-            position: circle.position,
-            spawn_time: elapsed,
-            duration: 1.0,
-            color,
-        });
-    }
+/// Calculate the spawn radius based on the screen size
+pub fn calculate_spawn_radius(width: f32, height: f32) -> f32 {
+    width.min(height) / 2.0 - 100.0
 }
 
 /// Calculate the shrinking radius with animation
-fn circle_radius(circle: &Circle, elapsed: f64, shrink_time: f64) -> Option<f32> {
+pub fn circle_radius(circle: &GameCircle, elapsed: f64, shrink_time: f64) -> Option<f32> {
     let time_since_spawn = elapsed - circle.spawn_time;
     if (0.0..=shrink_time).contains(&time_since_spawn) {
         Some(circle.max_radius * (1.0 - ((time_since_spawn / shrink_time) as f32)))
@@ -113,16 +58,24 @@ fn circle_radius(circle: &Circle, elapsed: f64, shrink_time: f64) -> Option<f32>
     }
 }
 
-/// Calculate the spawn radius based on the screen size
-pub fn calculate_spawn_radius(width: f32, height: f32) -> f32 {
-    width.min(height) / 2.0 - 100.0
+/// Calculate score from timing difference
+pub fn calculate_score_from_timing(time_difference: f64) -> i32 {
+    if time_difference < 0.08 {
+        300
+    } else if time_difference < 0.2 {
+        100
+    } else if time_difference < 0.35 {
+        50
+    } else {
+        0
+    }
 }
 
 /// Handle missed circles and animate a "Miss" text
 pub fn handle_missed_circles(
-    circles: &mut Vec<Circle>,
+    circles: &mut Vec<GameCircle>,
     elapsed: f64,
-    floating_texts: &mut Vec<FloatingText>,
+    vis_state: &mut VisualizingState,
     shrink_time: f64,
 ) {
     for circle in circles.iter_mut().filter(|c| !c.hit && !c.missed) {
@@ -147,27 +100,19 @@ pub fn handle_missed_circles(
     }
 }
 
-/// Calculate score from timing difference
-fn calculate_score_from_timing(time_difference: f64) -> i32 {
-    if time_difference < 0.08 {
-        300
-    } else if time_difference < 0.2 {
-        100
-    } else if time_difference < 0.35 {
-        50
-    } else {
-        0
-    }
-}
-
 /// Score calculation based on the hit time and elapsed time (legacy)
 pub fn calculate_score(hit_time: f64, current_time: f64) -> i32 {
     let time_difference = (current_time - hit_time).abs();
     calculate_score_from_timing(time_difference)
 }
 
-/// Draw animated circles with stylizing and dynamic color transitions
-pub fn draw_circles(circles: &Vec<Circle>, elapsed: f64, shrink_time: f64) {
+/// Draw circles in Bevy
+pub fn draw_circles_bevy(
+    commands: &mut Commands,
+    circles: &[GameCircle],
+    elapsed: f64,
+    shrink_time: f64,
+) {
     // Pre-compute pulse intensity once
     let pulse_intensity = 0.5 + (elapsed.sin() as f32) * 0.5;
 
@@ -187,55 +132,53 @@ pub fn draw_circles(circles: &Vec<Circle>, elapsed: f64, shrink_time: f64) {
             // Pre-compute alpha
             let alpha = 0.6 - scale * 0.5;
 
-            // Draw an animated outline with a pulsing effect
-            draw_circle(
-                circle.position.x,
-                circle.position.y,
-                radius + OUTLINE_THICKNESS,
-                Color::new(
-                    OUTLINE_COLOR.r,
-                    OUTLINE_COLOR.g,
-                    OUTLINE_COLOR.b,
-                    pulse_intensity,
-                ),
-            );
+            // Draw outline circle (pulsing effect)
+            commands.spawn((
+                Sprite {
+                    color: Color::srgba(
+                        OUTLINE_COLOR.to_linear().red,
+                        OUTLINE_COLOR.to_linear().green,
+                        OUTLINE_COLOR.to_linear().blue,
+                        pulse_intensity,
+                    ),
+                    custom_size: Some(Vec2::new(
+                        (radius + OUTLINE_THICKNESS) * 2.0,
+                        (radius + OUTLINE_THICKNESS) * 2.0,
+                    )),
+                    ..default()
+                },
+                Transform::from_xyz(circle.position.x, circle.position.y, 0.3),
+                crate::ui::UiElement,
+            ));
 
-            // Use a predefined neon color for the circle's fill
-            let color = Color::new(0.0, 0.75, 1.0, alpha);
+            // Draw main circle
+            let color = Color::srgba(0.0, 0.75, 1.0, alpha);
+            commands.spawn((
+                Sprite {
+                    color,
+                    custom_size: Some(Vec2::new(radius * 2.0, radius * 2.0)),
+                    ..default()
+                },
+                Transform::from_xyz(circle.position.x, circle.position.y, 0.2),
+                crate::ui::UiElement,
+            ));
 
-            draw_circle(circle.position.x, circle.position.y, radius, color);
-
-            // Draw approach circle
-            draw_circle_lines(
-                circle.position.x,
-                circle.position.y,
-                radius,
-                2.0,
-                Color::new(
-                    circle_color.r,
-                    circle_color.g,
-                    circle_color.b,
-                    0.3 + pulse_intensity * 0.3,
-                ),
-            );
+            // Draw approach circle (outline)
+            let approach_alpha = 0.3 + pulse_intensity * 0.3;
+            commands.spawn((
+                Sprite {
+                    color: Color::srgba(
+                        OUTLINE_COLOR.to_linear().red,
+                        OUTLINE_COLOR.to_linear().green,
+                        OUTLINE_COLOR.to_linear().blue,
+                        approach_alpha,
+                    ),
+                    custom_size: Some(Vec2::new(radius * 2.0, radius * 2.0)),
+                    ..default()
+                },
+                Transform::from_xyz(circle.position.x, circle.position.y, 0.1),
+                crate::ui::UiElement,
+            ));
         }
-    }
-}
-
-/// Draw circle outline
-fn draw_circle_lines(x: f32, y: f32, radius: f32, thickness: f32, color: Color) {
-    let segments = 32;
-    let angle_step = std::f32::consts::TAU / segments as f32;
-
-    for i in 0..segments {
-        let angle1 = i as f32 * angle_step;
-        let angle2 = ((i + 1) % segments) as f32 * angle_step;
-
-        let x1 = x + radius * angle1.cos();
-        let y1 = y + radius * angle1.sin();
-        let x2 = x + radius * angle2.cos();
-        let y2 = y + radius * angle2.sin();
-
-        macroquad::shapes::draw_line(x1, y1, x2, y2, thickness, color);
     }
 }
