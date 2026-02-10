@@ -70,9 +70,14 @@ pub fn draw_menu(assets: &Assets) -> Option<String> {
     let buttons = vec![
         ("Start Game", start_y),
         ("Practice", start_y + button_height + button_spacing),
-        ("Analytics", start_y + 2.0 * (button_height + button_spacing)),
-        ("Settings", start_y + 3.0 * (button_height + button_spacing)),
-        ("Exit", start_y + 4.0 * (button_height + button_spacing)),
+        ("Multiplayer", start_y + 2.0 * (button_height + button_spacing)),
+        ("Profile", start_y + 3.0 * (button_height + button_spacing)),
+        ("Leaderboard", start_y + 4.0 * (button_height + button_spacing)),
+        ("Friends", start_y + 5.0 * (button_height + button_spacing)),
+        ("Community Hub", start_y + 6.0 * (button_height + button_spacing)),
+        ("Analytics", start_y + 7.0 * (button_height + button_spacing)),
+        ("Settings", start_y + 8.0 * (button_height + button_spacing)),
+        ("Exit", start_y + 9.0 * (button_height + button_spacing)),
     ];
 
     // Loop through buttons and draw them

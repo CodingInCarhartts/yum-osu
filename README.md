@@ -67,7 +67,18 @@ The game uses **beat detection algorithms** to analyze audio files in real-time 
 - 🤖 **Autoplay Mode** - Watch the game play itself
 - 🔊 **Hit Sounds** - Audio feedback on every hit
 
-### Analytics (Issue #12)
+### Multiplayer, Accounts, and Community (Issue #16)
+- 🌐 **Real-Time Multiplayer** - Compete with players worldwide in real-time rhythm battles
+- 👤 **User Accounts** - Create accounts, manage profiles, and track progress across devices
+- 🔐 **Secure Authentication** - Password hashing with Argon2, session management, and token-based auth
+- 🏆 **Global Leaderboards** - Climb the ranks on global, country, and friends leaderboards
+- 👥 **Friends System** - Add friends, see their online status, and challenge them to matches
+- 🎖️ **Achievements** - Unlock achievements for milestones like perfect games, high combos, and more
+- 💬 **Live Chat** - Chat in lobbies and send direct messages to friends
+- 🏅 **Tournaments** - Participate in community tournaments with prizes and rankings
+- 🏠 **Lobby System** - Create and join game rooms, set player limits, and host matches
+- 📊 **Live Score Sync** - Real-time score updates and ranking during multiplayer matches
+- 🎯 **Game State Synchronization** - Accurate hit detection and combo tracking for all players
 - 📈 **Performance Tracking** - Detailed stats on every game session
 - 🏆 **Grade System** - SS, S, A, B, C, D, F grades based on accuracy
 - 📊 **Hit Statistics** - Track Perfect, Good, Okay, and Miss counts
@@ -181,6 +192,92 @@ All controls can be customized in the **Settings** menu:
 
 ---
 
+## 🌐 Multiplayer Setup <a name="multiplayer"></a>
+
+### Running the Multiplayer Server
+
+The game includes a dedicated multiplayer server for hosting games, managing accounts, and community features.
+
+**Start the server:**
+```bash
+cargo run --bin server
+```
+
+The server will listen on `0.0.0.0:8080` by default and handle:
+- WebSocket connections for real-time gameplay
+- User authentication and session management
+- Lobby and room management
+- Leaderboard updates
+- Tournament coordination
+
+### Account Management
+
+**Creating an Account:**
+1. Select "Profile" from the main menu
+2. Click "Register" if you don't have an account
+3. Enter your username, email, and password
+4. Your account is created and you can start competing!
+
+**Login:**
+1. Select "Profile" or attempt to access multiplayer features
+2. Enter your username and password
+3. Your session is valid for 30 days
+
+### Multiplayer Gameplay
+
+**Joining a Lobby:**
+1. Select "Multiplayer" from the main menu
+2. Browse available rooms or create your own
+3. Join a room and wait for the host to start the game
+
+**Creating a Room:**
+1. In Multiplayer lobby, press "C" to create a room
+2. Set room name and maximum players (2-8)
+3. Select a song from your library
+4. Wait for other players to join and ready up
+5. Start the match!
+
+**During Multiplayer Matches:**
+- Scores are synced in real-time
+- See rankings update live as players hit notes
+- Chat with other players
+- Spectate matches if you join late
+
+### Community Features
+
+**Leaderboards:**
+- Access via "Leaderboard" from main menu
+- View Global, Country, and Friends leaderboards
+- See your rank, score, and accuracy
+- Track progress over time
+
+**Friends System:**
+- Add players by username
+- See online status and current activity
+- Send direct messages
+- Challenge friends to private matches
+
+**Tournaments:**
+- Browse active tournaments in "Community Hub"
+- Join open tournaments
+- Compete in brackets
+- Win prizes and climb tournament rankings
+
+**Achievements:**
+- Unlock achievements for milestones
+- View progress in your profile
+- Show off achievements to friends
+
+### Multiplayer Networking
+
+The game uses WebSockets for real-time communication:
+- Low-latency hit event synchronization
+- Reliable message delivery
+- Efficient JSON-based protocol
+- Automatic reconnection support
+
+---
+
 ## 📁 Project Structure <a name="project-structure"></a>
 
 ```
@@ -194,13 +291,23 @@ yum-osu/
 │   ├── constants.rs      # Game constants and styling
 │   ├── config.rs         # Settings and customization system
 │   ├── analytics.rs      # Performance tracking and statistics
+│   ├── network.rs        # WebSocket client/server for multiplayer
+│   ├── accounts.rs       # User authentication, profiles, sessions
+│   ├── multiplayer.rs    # Game state synchronization, rooms, events
+│   ├── community.rs      # Leaderboards, friends, chat, tournaments
+│   ├── beatmap.rs        # Beat detection and circle spawning
 │   └── assets/
 │       ├── music/        # MP3 files for gameplay
 │       ├── images/       # UI images and textures
 │       └── fonts/        # Custom fonts
+├── src/bin/
+│   └── server.rs        # Dedicated multiplayer server
 ├── Cargo.toml            # Rust dependencies
 ├── config.json           # User settings (auto-generated)
 ├── analytics.json        # Player statistics (auto-generated)
+├── data/
+│   ├── users.json       # User accounts database
+│   └── sessions.json    # Active sessions
 └── README.md             # This file
 ```
 
@@ -214,6 +321,10 @@ yum-osu/
 - **`constants.rs`** - Styling constants including cyberpunk color palette
 - **`config.rs`** - Settings system with key bindings, themes, audio, and practice mode configuration
 - **`analytics.rs`** - Performance tracking with grades, hit statistics, achievements, and session history
+- **`network.rs`** - WebSocket client/server implementation for real-time multiplayer communication
+- **`accounts.rs`** - User authentication with Argon2 password hashing, session management, and profiles
+- **`multiplayer.rs`** - Game state synchronization, room management, and event coordination
+- **`community.rs`** - Leaderboards, friends system, chat rooms, and tournaments
 
 ---
 
@@ -226,6 +337,11 @@ yum-osu/
 | [Rodio](https://github.com/RustAudio/rodio) | Audio playback |
 | [aubio](https://aubio.org/) | Audio analysis and beat detection |
 | [biquad](https://github.com/korken89/biquad-rs) | Audio filtering (low-pass for kick detection) |
+| [Tokio](https://tokio.rs/) | Async runtime for networking |
+| [Tokio-Tungstenite](https://github.com/snapview/tokio-tungstenite) | WebSocket implementation |
+| [Argon2](https://github.com/RustCrypto/password-hashes) | Secure password hashing |
+| [UUID](https://github.com/uuid-rs/uuid) | Unique identifiers for users and rooms |
+| [Chrono](https://github.com/chronotope/chrono) | Date and time handling |
 | [rayon](https://github.com/rayon-rs/rayon) | Data parallelism |
 | [rand](https://github.com/rust-random/rand) | Random number generation |
 
