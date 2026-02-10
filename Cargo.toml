@@ -1,15 +1,21 @@
 [package]
 name = "yum-osu"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
+authors = ["Yumshot <https://github.com/Yumshot>"]
+description = "A cyberpunk-styled rhythm game inspired by OSU!"
+license = "MIT"
+repository = "https://github.com/Yumshot/yum-osu"
 
 [dependencies]
-bevy = { version = "0.14", features = ["dynamic_linking"] }
-bevy_kira_audio = "0.20"
+macroquad = "0.4"
+rodio = "0.17"
 rand = "0.8.5"
 rayon = "1.10.0"
 aubio = "0.2.1"
 biquad = "0.4.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
 [profile.dev]
 opt-level = 1
