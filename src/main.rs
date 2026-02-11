@@ -1,7 +1,11 @@
 mod analytics;
 mod audio;
+mod beatmap;
 mod config;
 mod constants;
+mod editor;
+mod editor_input;
+mod editor_ui;
 mod game;
 mod gamemode;
 mod structs;
@@ -9,8 +13,12 @@ mod ui;
 
 use crate::analytics::{Analytics, AnalyticsState};
 use crate::audio::gather_beats;
+use crate::beatmap::BeatmapAssets;
 use crate::config::{GameConfig, SettingsState};
 use crate::constants::*;
+use crate::editor::{EditorState, EditorUIState};
+use crate::editor_input::{handle_editor_input, handle_editor_ui_interactions, handle_save_shortcut, update_editor};
+use crate::editor_ui::{render_editor_hit_objects, setup_editor_ui};
 use crate::game::*;
 use crate::structs::*;
 use crate::ui::*;
@@ -29,6 +37,9 @@ fn main() {
         .init_resource::<SettingsState>()
         .init_resource::<AnalyticsState>()
         .init_resource::<PracticeMenuState>()
+        .init_resource::<EditorState>()
+        .init_resource::<EditorUIState>()
+        .init_resource::<BeatmapAssets>()
         .add_event::<GameEvent>()
         .add_systems(Startup, setup)
         .add_systems(Update, (handle_window_close, update_game_time))
@@ -111,6 +122,34 @@ fn main() {
             update_analytics.run_if(in_state(AppState::Analytics)),
         )
         .add_systems(OnExit(AppState::Analytics), cleanup_ui)
+        // Beatmap editor state systems
+        .add_systems(
+            OnEnter(AppState::BeatmapEditor),
+            (enter_beatmap_editor, setup_editor_ui),
+        )
+        .add_systems(
+            Update,
+            (
+                handle_editor_input,
+                handle_editor_ui_interactions,
+                handle_save_shortcut,
+                update_editor,
+                render_editor_hit_objects,
+            )
+                .run_if(in_state(AppState::BeatmapEditor)),
+        )
+        .add_systems(OnExit(AppState::BeatmapEditor), cleanup_ui)
+        // Beatmap selection state systems
+        .add_systems(
+            OnEnter(AppState::BeatmapSelection),
+            (enter_beatmap_selection, setup_beatmap_selection_ui),
+        )
+        .add_systems(
+            Update,
+            (update_beatmap_selection, handle_beatmap_selection)
+                .run_if(in_state(AppState::BeatmapSelection)),
+        )
+        .add_systems(OnExit(AppState::BeatmapSelection), cleanup_ui)
         .run();
 }
 
@@ -128,6 +167,8 @@ pub enum AppState {
     End,
     Settings,
     Analytics,
+    BeatmapEditor,
+    BeatmapSelection,
 }
 
 /// Game events for communication between systems
@@ -159,6 +200,13 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Load analytics
     let analytics = Analytics::load();
     commands.insert_resource(analytics);
+
+    // Initialize beatmap assets
+    let mut beatmap_assets = BeatmapAssets::default();
+    if let Err(e) = beatmap_assets.load_all() {
+        eprintln!("Failed to load beatmaps: {}", e);
+    }
+    commands.insert_resource(beatmap_assets);
 
     // Setup audio
     let (_stream, stream_handle) = OutputStream::try_default().unwrap();
@@ -227,16 +275,20 @@ fn update_menu(windows: Query<&Window>, mut menu_data: ResMut<MenuData>) {
                 start_y + button_height + button_spacing,
             ),
             (
-                "Analytics".to_string(),
+                "Beatmap Editor".to_string(),
                 start_y + 2.0 * (button_height + button_spacing),
             ),
             (
-                "Settings".to_string(),
+                "Analytics".to_string(),
                 start_y + 3.0 * (button_height + button_spacing),
             ),
             (
-                "Exit".to_string(),
+                "Settings".to_string(),
                 start_y + 4.0 * (button_height + button_spacing),
+            ),
+            (
+                "Exit".to_string(),
+                start_y + 5.0 * (button_height + button_spacing),
             ),
         ];
 
@@ -634,6 +686,199 @@ fn enter_analytics(mut analytics_state: ResMut<AnalyticsState>) {
 }
 
 fn update_analytics(
+    mut next_state: ResMut<NextState<AppState>>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+) {
+    if keyboard.just_pressed(KeyCode::Escape) {
+        next_state.set(AppState::Menu);
+    }
+}
+
+// ==================== BEATMAP EDITOR STATE ====================
+
+fn enter_beatmap_editor(
+    mut editor_state: ResMut<EditorState>,
+    mut editor_ui: ResMut<EditorUIState>,
+) {
+    *editor_state = EditorState::new();
+    *editor_ui = EditorUIState::default();
+}
+
+// ==================== BEATMAP SELECTION STATE ====================
+
+#[derive(Debug, Clone, Resource, Default)]
+pub struct BeatmapSelectionState {
+    pub selected_beatmap: Option<String>,
+    pub scroll_pos: f32,
+}
+
+fn enter_beatmap_selection(
+    mut beatmap_assets: ResMut<BeatmapAssets>,
+    mut selection_state: ResMut<BeatmapSelectionState>,
+) {
+    // Reload beatmaps to get any new ones
+    if let Err(e) = beatmap_assets.load_all() {
+        eprintln!("Failed to reload beatmaps: {}", e);
+    }
+    *selection_state = BeatmapSelectionState::default();
+}
+
+fn setup_beatmap_selection_ui(
+    mut commands: Commands,
+    assets: Res<GameAssets>,
+    windows: Query<&Window>,
+    beatmap_assets: Res<BeatmapAssets>,
+) {
+    if let Ok(window) = windows.get_single() {
+        let screen_h = window.height();
+        let screen_w = window.width();
+
+        // Title
+        commands.spawn((
+            Text2d::new("Beatmap Editor - Select or Create"),
+            TextFont {
+                font: assets.cyberpunk_font.clone(),
+                font_size: CYBERPUNK_FONT_SIZE,
+                ..default()
+            },
+            TextColor(NEON_PINK.into()),
+            Transform::from_xyz(-screen_w / 2.0 + 20.0, screen_h / 2.0 - screen_h * 0.1, 1.0),
+            UiElement,
+        ));
+
+        // Beatmap list
+        let paths = beatmap_assets.get_all_paths();
+        for (i, path) in paths.iter().enumerate() {
+            let button_y =
+                screen_h / 2.0 - screen_h * 0.2 - (i as f32) * (SONG_ENTRY_HEIGHT + 20.0);
+
+            if let Some(beatmap) = beatmap_assets.get(path) {
+                let display_name = format!(
+                    "{} - {} [{}]",
+                    beatmap.metadata.artist,
+                    beatmap.metadata.title,
+                    beatmap.metadata.version
+                );
+
+                commands.spawn((
+                    Text2d::new(display_name),
+                    TextFont {
+                        font: assets.cyberpunk_font.clone(),
+                        font_size: CYBERPUNK_FONT_SIZE,
+                        ..default()
+                    },
+                    TextColor(Color::WHITE.into()),
+                    Transform::from_xyz(-screen_w / 2.0 + 50.0, button_y, 1.0),
+                    UiElement,
+                    BeatmapButton {
+                        path: (*path).clone(),
+                    },
+                ));
+            }
+        }
+
+        // Create new beatmap button
+        let new_y = screen_h / 2.0 - screen_h * 0.2 - (paths.len() as f32) * (SONG_ENTRY_HEIGHT + 20.0) - 30.0;
+        commands.spawn((
+            Text2d::new("+ Create New Beatmap"),
+            TextFont {
+                font: assets.cyberpunk_font.clone(),
+                font_size: CYBERPUNK_FONT_SIZE,
+                ..default()
+            },
+            TextColor(NEON_GREEN.into()),
+            Transform::from_xyz(-screen_w / 2.0 + 50.0, new_y, 1.0),
+            UiElement,
+            CreateBeatmapButton,
+        ));
+
+        // Back button text
+        commands.spawn((
+            Text2d::new("Press ESC to go back"),
+            TextFont {
+                font: assets.cyberpunk_font.clone(),
+                font_size: 16.0,
+                ..default()
+            },
+            TextColor(Color::srgba(1.0, 1.0, 1.0, 0.5).into()),
+            Transform::from_xyz(-screen_w / 2.0 + 20.0, -screen_h / 2.0 + 20.0, 1.0),
+            UiElement,
+        ));
+    }
+}
+
+#[derive(Component)]
+pub struct BeatmapButton {
+    pub path: String,
+}
+
+#[derive(Component)]
+pub struct CreateBeatmapButton;
+
+fn handle_beatmap_selection(
+    mut next_state: ResMut<NextState<AppState>>,
+    mut editor_state: ResMut<EditorState>,
+    mut beatmap_assets: ResMut<BeatmapAssets>,
+    buttons: Query<(&Transform, &BeatmapButton), With<Text2d>>,
+    create_buttons: Query<&Transform, (With<CreateBeatmapButton>, With<Text2d>)>,
+    windows: Query<&Window>,
+    mouse_input: Res<ButtonInput<MouseButton>>,
+) {
+    if let Ok(window) = windows.get_single() {
+        if let Some(cursor_pos) = window.cursor_position() {
+            let world_x = cursor_pos.x - window.width() / 2.0;
+            let world_y = window.height() / 2.0 - cursor_pos.y;
+
+            // Check beatmap buttons
+            for (transform, button) in buttons.iter() {
+                let rect = Rect::from_center_size(
+                    transform.translation.truncate(),
+                    Vec2::new(400.0, SONG_ENTRY_HEIGHT),
+                );
+
+                if rect.contains(Vec2::new(world_x, world_y)) {
+                    if mouse_input.just_pressed(MouseButton::Left) {
+                        // Set current beatmap and enter editor
+                        beatmap_assets.set_current(Some(button.path.clone()));
+                        editor_state.current_beatmap_path = Some(button.path.clone());
+                        next_state.set(AppState::BeatmapEditor);
+                    }
+                }
+            }
+
+            // Check create new button
+            for transform in create_buttons.iter() {
+                let rect = Rect::from_center_size(
+                    transform.translation.truncate(),
+                    Vec2::new(300.0, SONG_ENTRY_HEIGHT),
+                );
+
+                if rect.contains(Vec2::new(world_x, world_y)) {
+                    if mouse_input.just_pressed(MouseButton::Left) {
+                        // Create a new beatmap with default values
+                        use crate::beatmap::Beatmap;
+                        let timestamp = std::time::SystemTime::now()
+                            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs();
+                        let new_path = format!("src/assets/beatmaps/new_beatmap_{}.json", timestamp);
+                        let new_beatmap = Beatmap::new(
+                            "New Song".to_string(),
+                            "Unknown Artist".to_string(),
+                            "src/assets/music/".to_string(),
+                        );
+                        beatmap_assets.add(new_path.clone(), new_beatmap);
+                        beatmap_assets.set_current(Some(new_path.clone()));
+                        editor_state.current_beatmap_path = Some(new_path);
+                        next_state.set(AppState::BeatmapEditor);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn update_beatmap_selection(
     mut next_state: ResMut<NextState<AppState>>,
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
