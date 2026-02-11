@@ -1,14 +1,11 @@
 // src/structs.rs
 
 use bevy::prelude::*;
-use rodio::Decoder;
-use std::fs::File;
-use std::io::BufReader;
-use std::sync::mpsc;
 use std::time::Instant;
 
 use crate::analytics::ActiveSession;
 use crate::config::GameConfig;
+use crate::gamemode::GameSettings;
 
 /// UI Assets container
 #[derive(Resource, Clone)]
@@ -45,9 +42,10 @@ impl SongSelectionState {
     }
 }
 
-/// Main game state enum
-#[derive(Debug, Clone)]
+/// Main game state enum (legacy - used for internal state tracking)
+#[derive(Debug, Clone, Default)]
 pub enum GameState {
+    #[default]
     Menu,
     SongSelection,
     /// Practice tools menu
@@ -57,22 +55,14 @@ pub enum GameState {
     Analytics,
     Exit,
     Loading {
-        rx: mpsc::Receiver<Vec<f64>>,
         start_time: Instant,
     },
     ReadyToPlay {
         beats: Vec<f64>,
         ready_time: Instant,
-        source: Option<Decoder<BufReader<File>>>,
     },
     Visualizing(Box<VisualizingState>),
     End(Box<EndState>),
-}
-
-impl Default for GameState {
-    fn default() -> Self {
-        GameState::Menu
-    }
 }
 
 /// Game circle structure
@@ -107,6 +97,8 @@ pub struct VisualizingState {
     pub floating_texts: Vec<FloatingText>,
     /// Current game configuration
     pub config: GameConfig,
+    /// Game settings (mode, difficulty, modifiers)
+    pub game_settings: GameSettings,
     /// Active analytics session
     pub active_session: Option<ActiveSession>,
     /// Whether practice mode is active
@@ -121,6 +113,10 @@ pub struct VisualizingState {
     pub combo: u32,
     /// Max combo achieved
     pub max_combo: u32,
+    /// Lives remaining (for survival mode)
+    pub lives: Option<u32>,
+    /// Time remaining (for time attack mode)
+    pub time_remaining: Option<f64>,
 }
 
 impl VisualizingState {
@@ -134,6 +130,7 @@ impl VisualizingState {
         let practice_mode = config.practice.autoplay || config.practice.no_fail;
         let playback_speed = config.practice.playback_speed;
         let no_fail = config.practice.no_fail;
+        let game_settings = config.game_settings.clone();
 
         let active_session = if config.save_analytics {
             Some(ActiveSession::new(
@@ -145,6 +142,20 @@ impl VisualizingState {
             None
         };
 
+        // Initialize lives and time based on game mode
+        let lives = match game_settings.mode {
+            crate::gamemode::GameMode::Survival { lives } => Some(lives),
+            crate::gamemode::GameMode::SuddenDeath => Some(1),
+            _ => None,
+        };
+
+        let time_remaining = match game_settings.mode {
+            crate::gamemode::GameMode::TimeAttack { time_limit_seconds } => {
+                Some(time_limit_seconds as f64)
+            }
+            _ => None,
+        };
+
         Self {
             beats,
             start_time: Instant::now(),
@@ -152,6 +163,7 @@ impl VisualizingState {
             score: 0,
             floating_texts: Vec::new(),
             config,
+            game_settings,
             active_session,
             practice_mode,
             playback_speed,
@@ -159,6 +171,8 @@ impl VisualizingState {
             song_name,
             combo: 0,
             max_combo: 0,
+            lives,
+            time_remaining,
         }
     }
 
@@ -222,6 +236,12 @@ pub struct EndState {
     pub new_best: bool,
     /// Previous best score
     pub previous_best: i32,
+    /// Game mode played
+    pub game_mode: crate::gamemode::GameMode,
+    /// Difficulty level
+    pub difficulty: Difficulty,
+    /// Active modifiers
+    pub modifiers: Vec<Modifier>,
 }
 
 /// Practice menu state

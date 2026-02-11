@@ -3,6 +3,7 @@ mod audio;
 mod config;
 mod constants;
 mod game;
+mod gamemode;
 mod structs;
 mod ui;
 
@@ -17,7 +18,6 @@ use crate::ui::*;
 use bevy::prelude::*;
 use bevy::window::WindowCloseRequested;
 use rodio::{Decoder, OutputStream, Sink};
-use std::sync::mpsc;
 use std::time::Instant;
 
 fn main() {
@@ -172,8 +172,12 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
 }
 
 /// Resource to hold audio stream (must be kept alive)
-#[derive(Resource)]
+/// Safety: OutputStream is not Send/Sync due to raw pointers, but we only use it on the main thread
 pub struct AudioStream(#[allow(dead_code)] OutputStream);
+
+// SAFETY: We promise to only use AudioStream on the main thread
+unsafe impl Send for AudioStream {}
+unsafe impl Sync for AudioStream {}
 
 /// Update game time
 fn update_game_time(mut game_time: ResMut<GameTime>) {
@@ -207,7 +211,7 @@ pub struct MenuData {
 }
 
 fn update_menu(windows: Query<&Window>, mut menu_data: ResMut<MenuData>) {
-    if let Ok(window) = windows.single() {
+    if let Ok(window) = windows.get_single() {
         let scr_width = window.width();
         let scr_height = window.height();
 
@@ -296,33 +300,14 @@ fn enter_playing(
     game_state: Res<GameStateResource>,
     mut next_state: ResMut<NextState<AppState>>,
 ) {
-    // Start beat detection in a new thread
-    let song_path = game_state.selected_song.clone();
-
     commands.insert_resource(LoadingData {
         beats: None,
         start_time: Instant::now(),
-        song_path: song_path.clone(),
+        song_path: game_state.selected_song.clone(),
     });
-
-    // Spawn a thread to load beats
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        let beats = gather_beats(&song_path);
-        let _ = tx.send(beats);
-    });
-
-    // Store the receiver in a non-resource way using a channel
-    // We'll check it in update_loading
-    commands.insert_resource(BeatReceiver { rx: Some(rx) });
 
     // Transition to loading state
     next_state.set(AppState::Loading);
-}
-
-#[derive(Resource)]
-struct BeatReceiver {
-    rx: Option<mpsc::Receiver<Vec<f64>>>,
 }
 
 // ==================== LOADING STATE ====================
@@ -334,23 +319,23 @@ fn enter_loading() {
 fn update_loading(
     mut commands: Commands,
     mut loading_data: ResMut<LoadingData>,
-    mut beat_receiver: ResMut<BeatReceiver>,
     mut next_state: ResMut<NextState<AppState>>,
 ) {
-    // Check if beats are received
-    if let Some(ref rx) = beat_receiver.rx {
-        if let Ok(beats) = rx.try_recv() {
-            loading_data.beats = Some(beats);
+    // Load beats synchronously (we're in a loading screen, so this is fine)
+    if loading_data.beats.is_none() {
+        let beats = gather_beats(&loading_data.song_path);
+        loading_data.beats = Some(beats);
+    }
 
-            commands.insert_resource(ReadyToPlayData {
-                beats: loading_data.beats.clone().unwrap(),
-                ready_time: Instant::now(),
-            });
+    // Once we have beats, transition to ready
+    if let Some(ref beats) = loading_data.beats {
+        commands.insert_resource(ReadyToPlayData {
+            beats: beats.clone(),
+            ready_time: Instant::now(),
+        });
 
-            commands.remove_resource::<LoadingData>();
-            commands.remove_resource::<BeatReceiver>();
-            next_state.set(AppState::ReadyToPlay);
-        }
+        commands.remove_resource::<LoadingData>();
+        next_state.set(AppState::ReadyToPlay);
     }
 }
 
@@ -382,7 +367,7 @@ fn update_ready_to_play(
         }
 
         // Initialize visualization state
-        if let Ok(window) = windows.single() {
+        if let Ok(window) = windows.get_single() {
             let width = window.width();
             let height = window.height();
             let mut rng = rand::thread_rng();
@@ -444,7 +429,7 @@ fn update_visualizing(
     // Get mouse position for hit detection
     let mut mouse_pos = Vec2::ZERO;
 
-    if let Ok(window) = windows.single() {
+    if let Ok(window) = windows.get_single() {
         if let Some(cursor_pos) = window.cursor_position() {
             mouse_pos = Vec2::new(
                 cursor_pos.x - window.width() / 2.0,
@@ -470,12 +455,65 @@ fn update_visualizing(
     }
 
     // Handle missed circles
-    handle_missed_circles(
+    let should_end_game = handle_missed_circles(
         &mut visualizing_data.state.circles,
         elapsed,
         &mut visualizing_data.state,
         SHRINK_TIME,
     );
+
+    // Check if game should end due to survival mode
+    if should_end_game {
+        audio_sink.sink.stop();
+
+        if let Some(session) = visualizing_data.state.finish_session() {
+            if config.save_analytics {
+                analytics.add_session(session);
+            }
+        }
+
+        // Create end state with survival info
+        let active_session = visualizing_data.state.finish_session();
+
+        let end_state = EndState {
+            score: visualizing_data.state.score,
+            max_combo: visualizing_data.state.max_combo,
+            hits: if let Some(ref session) = active_session {
+                session.hits.clone()
+            } else {
+                crate::analytics::HitStats::new()
+            },
+            accuracy: if let Some(ref session) = active_session {
+                session.accuracy
+            } else {
+                0.0
+            },
+            grade: if let Some(ref session) = active_session {
+                session.grade.clone()
+            } else {
+                crate::analytics::Grade::F
+            },
+            full_combo: false, // Can't be full combo if you ran out of lives
+            song_name: visualizing_data.state.song_name.clone(),
+            practice_mode: visualizing_data.state.practice_mode,
+            playback_speed: visualizing_data.state.playback_speed,
+            new_best: false,
+            previous_best: 0,
+            game_mode: visualizing_data.state.game_settings.mode,
+            difficulty: visualizing_data.state.game_settings.difficulty,
+            modifiers: visualizing_data.state.game_settings.modifiers.clone(),
+        };
+
+        if config.save_analytics {
+            if let Some(session) = active_session {
+                analytics.add_session(session);
+            }
+        }
+
+        commands.insert_resource(EndData { state: end_state });
+        next_state.set(AppState::End);
+        return;
+    }
 
     // Check for exit
     if keyboard.just_pressed(config.key_bindings.exit_key()) {
@@ -531,6 +569,9 @@ fn update_visualizing(
             playback_speed: visualizing_data.state.playback_speed,
             new_best: false,
             previous_best: 0,
+            game_mode: visualizing_data.state.game_settings.mode,
+            difficulty: visualizing_data.state.game_settings.difficulty,
+            modifiers: visualizing_data.state.game_settings.modifiers.clone(),
         };
 
         if config.save_analytics {
@@ -616,6 +657,7 @@ fn render_game_circles(mut commands: Commands, visualizing_data: Res<Visualizing
         &visualizing_data.state.circles,
         elapsed,
         SHRINK_TIME,
+        &visualizing_data.state.game_settings,
     );
 }
 
@@ -686,7 +728,7 @@ fn handle_key_hits_with_mouse(
         circle.hit = true;
 
         let hit_time_diff = (elapsed - circle.hit_time).abs();
-        let points = calculate_score_from_timing(hit_time_diff);
+        let points = calculate_score_from_timing(hit_time_diff, &vis_state.game_settings);
 
         // Record the hit with timing
         let timing_ms = (hit_time_diff * 1000.0) as f32;

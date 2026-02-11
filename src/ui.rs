@@ -32,7 +32,7 @@ pub enum MenuAction {
 
 /// Setup the main menu UI
 pub fn setup_menu_ui(mut commands: Commands, assets: Res<GameAssets>, windows: Query<&Window>) {
-    if let Ok(window) = windows.single() {
+    if let Ok(window) = windows.get_single() {
         let scr_width = window.width();
         let scr_height = window.height();
 
@@ -126,7 +126,7 @@ pub fn handle_menu_interactions(
     windows: Query<&Window>,
     mouse_input: Res<ButtonInput<MouseButton>>,
 ) {
-    if let Ok(window) = windows.single() {
+    if let Ok(window) = windows.get_single() {
         if let Some(cursor_pos) = window.cursor_position() {
             // Convert to world coordinates (center is 0,0 in Bevy)
             let world_x = cursor_pos.x - window.width() / 2.0;
@@ -199,7 +199,7 @@ pub fn setup_song_selection_ui(
     windows: Query<&Window>,
     game_state: Res<GameStateResource>,
 ) {
-    if let Ok(window) = windows.single() {
+    if let Ok(window) = windows.get_single() {
         let screen_h = window.height();
         let screen_w = window.width();
 
@@ -273,7 +273,7 @@ pub fn handle_song_selection(
     windows: Query<&Window>,
     mouse_input: Res<ButtonInput<MouseButton>>,
 ) {
-    if let Ok(window) = windows.single() {
+    if let Ok(window) = windows.get_single() {
         if let Some(cursor_pos) = window.cursor_position() {
             let world_x = cursor_pos.x - window.width() / 2.0;
             let world_y = window.height() / 2.0 - cursor_pos.y;
@@ -297,7 +297,7 @@ pub fn handle_song_selection(
 
 /// Setup loading screen
 pub fn setup_loading_ui(mut commands: Commands, assets: Res<GameAssets>, windows: Query<&Window>) {
-    if let Ok(window) = windows.single() {
+    if let Ok(window) = windows.get_single() {
         commands.spawn((
             Text2d::new("Loading..."),
             TextFont {
@@ -318,7 +318,7 @@ pub struct LoadingText;
 
 /// Setup ready to play countdown
 pub fn setup_ready_ui(mut commands: Commands, assets: Res<GameAssets>, windows: Query<&Window>) {
-    if let Ok(window) = windows.single() {
+    if let Ok(window) = windows.get_single() {
         commands.spawn((
             Text2d::new("Starting in 5"),
             TextFont {
@@ -462,7 +462,7 @@ pub fn draw_floating_texts_bevy(
 
 /// Setup settings UI
 pub fn setup_settings_ui(mut commands: Commands, assets: Res<GameAssets>, windows: Query<&Window>) {
-    if let Ok(window) = windows.single() {
+    if let Ok(window) = windows.get_single() {
         let screen_h = window.height();
         let screen_w = window.width();
 
@@ -498,7 +498,7 @@ pub fn setup_practice_menu_ui(
     assets: Res<GameAssets>,
     windows: Query<&Window>,
 ) {
-    if let Ok(window) = windows.single() {
+    if let Ok(window) = windows.get_single() {
         let screen_h = window.height();
         let screen_w = window.width();
 
@@ -534,7 +534,7 @@ pub fn setup_analytics_ui(
     assets: Res<GameAssets>,
     windows: Query<&Window>,
 ) {
-    if let Ok(window) = windows.single() {
+    if let Ok(window) = windows.get_single() {
         let screen_h = window.height();
         let screen_w = window.width();
 
@@ -571,7 +571,7 @@ pub fn setup_end_ui(
     windows: Query<&Window>,
     end_data: Res<EndData>,
 ) {
-    if let Ok(window) = windows.single() {
+    if let Ok(window) = windows.get_single() {
         let scr_width = window.width();
         let scr_height = window.height();
 
