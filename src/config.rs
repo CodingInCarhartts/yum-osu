@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
+use crate::gamemode::{Difficulty, GameMode, GameSettings, Modifier};
+
 /// Game configuration settings for customization
 #[derive(Debug, Clone, Serialize, Deserialize, Resource)]
 pub struct GameConfig {
@@ -17,6 +19,8 @@ pub struct GameConfig {
     pub audio: AudioConfig,
     /// Practice mode settings
     pub practice: PracticeConfig,
+    /// Game settings (mode, difficulty, modifiers)
+    pub game_settings: GameSettings,
     /// Whether to save analytics
     pub save_analytics: bool,
 }
@@ -374,6 +378,7 @@ impl Default for GameConfig {
             theme: ThemeConfig::default(),
             audio: AudioConfig::default(),
             practice: PracticeConfig::default(),
+            game_settings: GameSettings::default(),
             save_analytics: true,
         }
     }
