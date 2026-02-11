@@ -25,6 +25,7 @@ pub struct MenuButton {
 pub enum MenuAction {
     StartGame,
     Practice,
+    BeatmapEditor,
     Analytics,
     Settings,
     Exit,
@@ -63,19 +64,24 @@ pub fn setup_menu_ui(mut commands: Commands, assets: Res<GameAssets>, windows: Q
                 start_y + button_height + button_spacing,
             ),
             (
+                "Beatmap Editor",
+                MenuAction::BeatmapEditor,
+                start_y + 2.0 * (button_height + button_spacing),
+            ),
+            (
                 "Analytics",
                 MenuAction::Analytics,
-                start_y + 2.0 * (button_height + button_spacing),
+                start_y + 3.0 * (button_height + button_spacing),
             ),
             (
                 "Settings",
                 MenuAction::Settings,
-                start_y + 3.0 * (button_height + button_spacing),
+                start_y + 4.0 * (button_height + button_spacing),
             ),
             (
                 "Exit",
                 MenuAction::Exit,
-                start_y + 4.0 * (button_height + button_spacing),
+                start_y + 5.0 * (button_height + button_spacing),
             ),
         ];
 
@@ -148,6 +154,9 @@ pub fn handle_menu_interactions(
                             MenuAction::Practice => {
                                 game_state.songs = load_songs_from_assets();
                                 next_state.set(AppState::PracticeMenu);
+                            }
+                            MenuAction::BeatmapEditor => {
+                                next_state.set(AppState::BeatmapSelection);
                             }
                             MenuAction::Analytics => {
                                 next_state.set(AppState::Analytics);
