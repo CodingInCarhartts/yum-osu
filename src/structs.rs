@@ -2,6 +2,7 @@
 
 use bevy::prelude::*;
 use std::time::Instant;
+use uuid::Uuid;
 
 use crate::analytics::ActiveSession;
 use crate::config::GameConfig;
@@ -50,6 +51,22 @@ pub enum GameState {
     SongSelection,
     /// Practice tools menu
     PracticeMenu,
+    /// Multiplayer lobby
+    MultiplayerLobby,
+    /// Login screen
+    Login,
+    /// Registration screen
+    Register,
+    /// Profile view
+    Profile,
+    /// Leaderboard
+    Leaderboard,
+    /// Friends list
+    Friends,
+    /// Community hub
+    CommunityHub,
+    /// Tournament view
+    Tournament,
     Playing,
     Settings,
     Analytics,
