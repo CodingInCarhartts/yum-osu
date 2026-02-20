@@ -1,26 +1,21 @@
 // src/structs.rs
 
-use macroquad::prelude::Vec2;
-use macroquad::text::Font;
-use rodio::Decoder;
-use std::fs::File;
-use std::io::BufReader;
-use std::sync::mpsc;
+use bevy::prelude::*;
 use std::time::Instant;
 use uuid::Uuid;
 
-use crate::accounts::User;
-use crate::analytics::{ActiveSession, Analytics};
-use crate::community::Tournament;
+use crate::analytics::ActiveSession;
 use crate::config::GameConfig;
-use crate::network::Room;
+use crate::gamemode::GameSettings;
 
 /// UI Assets container
-pub struct Assets {
-    pub cyberpunk_font: Font,
+#[derive(Resource, Clone)]
+pub struct GameAssets {
+    pub cyberpunk_font: Handle<Font>,
 }
 
 /// Song selection state
+#[derive(Debug, Clone, Resource)]
 pub struct SongSelectionState {
     pub scroll_pos: f32,
     pub selected_song: Option<String>,
@@ -28,6 +23,12 @@ pub struct SongSelectionState {
     pub practice_mode: bool,
     /// Selected playback speed for practice mode
     pub playback_speed: f32,
+}
+
+impl Default for SongSelectionState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SongSelectionState {
@@ -42,8 +43,10 @@ impl SongSelectionState {
     }
 }
 
-/// Main game state enum
+/// Main game state enum (legacy - used for internal state tracking)
+#[derive(Debug, Clone, Default)]
 pub enum GameState {
+    #[default]
     Menu,
     SongSelection,
     /// Practice tools menu
@@ -69,20 +72,19 @@ pub enum GameState {
     Analytics,
     Exit,
     Loading {
-        rx: mpsc::Receiver<Vec<f64>>,
         start_time: Instant,
     },
     ReadyToPlay {
         beats: Vec<f64>,
         ready_time: Instant,
-        source: Option<Decoder<BufReader<File>>>,
     },
     Visualizing(Box<VisualizingState>),
     End(Box<EndState>),
 }
 
 /// Game circle structure
-pub struct Circle {
+#[derive(Debug, Clone)]
+pub struct GameCircle {
     pub position: Vec2,
     pub spawn_time: f64,
     pub hit_time: f64,
@@ -92,6 +94,7 @@ pub struct Circle {
 }
 
 /// Floating text for feedback
+#[derive(Debug, Clone)]
 pub struct FloatingText {
     pub text: String,
     pub position: Vec2,
@@ -102,14 +105,17 @@ pub struct FloatingText {
 }
 
 /// Visualizing/gameplay state
+#[derive(Debug, Clone)]
 pub struct VisualizingState {
     pub beats: Vec<f64>,
     pub start_time: Instant,
-    pub circles: Vec<Circle>,
+    pub circles: Vec<GameCircle>,
     pub score: i32,
     pub floating_texts: Vec<FloatingText>,
     /// Current game configuration
     pub config: GameConfig,
+    /// Game settings (mode, difficulty, modifiers)
+    pub game_settings: GameSettings,
     /// Active analytics session
     pub active_session: Option<ActiveSession>,
     /// Whether practice mode is active
@@ -124,19 +130,24 @@ pub struct VisualizingState {
     pub combo: u32,
     /// Max combo achieved
     pub max_combo: u32,
+    /// Lives remaining (for survival mode)
+    pub lives: Option<u32>,
+    /// Time remaining (for time attack mode)
+    pub time_remaining: Option<f64>,
 }
 
 impl VisualizingState {
     /// Create new visualizing state
     pub fn new(
         beats: Vec<f64>,
-        circles: Vec<Circle>,
+        circles: Vec<GameCircle>,
         config: GameConfig,
         song_name: String,
     ) -> Self {
         let practice_mode = config.practice.autoplay || config.practice.no_fail;
         let playback_speed = config.practice.playback_speed;
         let no_fail = config.practice.no_fail;
+        let game_settings = config.game_settings.clone();
 
         let active_session = if config.save_analytics {
             Some(ActiveSession::new(
@@ -148,6 +159,20 @@ impl VisualizingState {
             None
         };
 
+        // Initialize lives and time based on game mode
+        let lives = match game_settings.mode {
+            crate::gamemode::GameMode::Survival { lives } => Some(lives),
+            crate::gamemode::GameMode::SuddenDeath => Some(1),
+            _ => None,
+        };
+
+        let time_remaining = match game_settings.mode {
+            crate::gamemode::GameMode::TimeAttack { time_limit_seconds } => {
+                Some(time_limit_seconds as f64)
+            }
+            _ => None,
+        };
+
         Self {
             beats,
             start_time: Instant::now(),
@@ -155,6 +180,7 @@ impl VisualizingState {
             score: 0,
             floating_texts: Vec::new(),
             config,
+            game_settings,
             active_session,
             practice_mode,
             playback_speed,
@@ -162,6 +188,8 @@ impl VisualizingState {
             song_name,
             combo: 0,
             max_combo: 0,
+            lives,
+            time_remaining,
         }
     }
 
@@ -201,6 +229,7 @@ impl VisualizingState {
 }
 
 /// End state for results screen
+#[derive(Debug, Clone)]
 pub struct EndState {
     /// Final score
     pub score: i32,
@@ -224,10 +253,16 @@ pub struct EndState {
     pub new_best: bool,
     /// Previous best score
     pub previous_best: i32,
+    /// Game mode played
+    pub game_mode: crate::gamemode::GameMode,
+    /// Difficulty level
+    pub difficulty: Difficulty,
+    /// Active modifiers
+    pub modifiers: Vec<Modifier>,
 }
 
 /// Practice menu state
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Resource)]
 pub struct PracticeMenuState {
     /// Selected song
     pub selected_song: Option<String>,
@@ -245,6 +280,12 @@ pub struct PracticeMenuState {
     pub loop_end: Option<f64>,
     /// Selected menu item
     pub selected_index: usize,
+}
+
+impl Default for PracticeMenuState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PracticeMenuState {
@@ -298,195 +339,70 @@ impl PracticeMenuState {
     }
 }
 
-/// Login state
-#[derive(Debug, Clone)]
-pub struct LoginState {
-    pub username: String,
-    pub password: String,
-    pub error_message: Option<String>,
-    pub is_registering: bool,
+/// Resource to hold the current game state
+#[derive(Resource, Default)]
+pub struct GameStateResource {
+    pub state: GameState,
+    pub selected_song: String,
+    pub songs: Vec<String>,
 }
 
-impl LoginState {
-    pub fn new() -> Self {
+/// Resource to hold audio sink
+#[derive(Resource)]
+pub struct GameAudioSink {
+    pub sink: rodio::Sink,
+}
+
+/// Resource to hold timing information
+#[derive(Resource)]
+pub struct GameTime {
+    pub start_time: Instant,
+    pub elapsed: f64,
+}
+
+impl Default for GameTime {
+    fn default() -> Self {
         Self {
-            username: String::new(),
-            password: String::new(),
-            error_message: None,
-            is_registering: false,
+            start_time: Instant::now(),
+            elapsed: 0.0,
         }
     }
 }
 
-/// Registration state
-#[derive(Debug, Clone)]
-pub struct RegisterState {
-    pub username: String,
-    pub password: String,
-    pub email: String,
-    pub confirm_password: String,
-    pub error_message: Option<String>,
+/// Resource for loading data - stores only the beats once loaded
+#[derive(Resource)]
+pub struct LoadingData {
+    pub beats: Option<Vec<f64>>,
+    pub start_time: Instant,
+    pub song_path: String,
 }
 
-impl RegisterState {
-    pub fn new() -> Self {
+impl Default for LoadingData {
+    fn default() -> Self {
         Self {
-            username: String::new(),
-            password: String::new(),
-            email: String::new(),
-            confirm_password: String::new(),
-            error_message: None,
+            beats: None,
+            start_time: Instant::now(),
+            song_path: String::new(),
         }
     }
 }
 
-/// Multiplayer lobby state
-#[derive(Debug, Clone)]
-pub struct MultiplayerLobbyState {
-    pub selected_room: Option<Uuid>,
-    pub room_password: String,
-    pub create_room: bool,
-    pub max_players: usize,
-    pub room_name: String,
-    pub selected_index: usize,
+/// Resource for ready to play data
+#[derive(Resource)]
+pub struct ReadyToPlayData {
+    pub beats: Vec<f64>,
+    pub ready_time: Instant,
 }
 
-impl MultiplayerLobbyState {
-    pub fn new() -> Self {
-        Self {
-            selected_room: None,
-            room_password: String::new(),
-            create_room: false,
-            max_players: 4,
-            room_name: String::new(),
-            selected_index: 0,
-        }
-    }
+/// Resource for visualizing data
+#[derive(Resource)]
+pub struct VisualizingData {
+    pub state: VisualizingState,
+    pub start_time: Instant,
 }
 
-/// Profile view state
-#[derive(Debug, Clone)]
-pub struct ProfileState {
-    pub viewing_user_id: Option<Uuid>,
-    pub selected_tab: ProfileTab,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum ProfileTab {
-    Overview,
-    Stats,
-    Achievements,
-    Scores,
-}
-
-impl ProfileState {
-    pub fn new() -> Self {
-        Self {
-            viewing_user_id: None,
-            selected_tab: ProfileTab::Overview,
-        }
-    }
-}
-
-/// Leaderboard state
-#[derive(Debug, Clone)]
-pub struct LeaderboardState {
-    pub selected_tab: LeaderboardTab,
-    pub country_filter: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum LeaderboardTab {
-    Global,
-    Country,
-    Friends,
-}
-
-impl LeaderboardState {
-    pub fn new() -> Self {
-        Self {
-            selected_tab: LeaderboardTab::Global,
-            country_filter: None,
-        }
-    }
-}
-
-/// Friends list state
-#[derive(Debug, Clone)]
-pub struct FriendsState {
-    pub selected_index: usize,
-    pub searching: bool,
-    pub search_query: String,
-}
-
-impl FriendsState {
-    pub fn new() -> Self {
-        Self {
-            selected_index: 0,
-            searching: false,
-            search_query: String::new(),
-        }
-    }
-}
-
-/// Community hub state
-#[derive(Debug, Clone)]
-pub struct CommunityHubState {
-    pub selected_tab: CommunityTab,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum CommunityTab {
-    Tournaments,
-    Chat,
-    Events,
-}
-
-impl CommunityHubState {
-    pub fn new() -> Self {
-        Self {
-            selected_tab: CommunityTab::Tournaments,
-        }
-    }
-}
-
-/// Tournament view state
-#[derive(Debug, Clone)]
-pub struct TournamentState {
-    pub tournament_id: Option<Uuid>,
-    pub is_participating: bool,
-}
-
-impl TournamentState {
-    pub fn new() -> Self {
-        Self {
-            tournament_id: None,
-            is_participating: false,
-        }
-    }
-}
-
-/// Current user session
-#[derive(Debug, Clone)]
-pub struct UserSession {
-    pub user_id: Uuid,
-    pub username: String,
-    pub token: String,
-    pub expires_at: std::time::SystemTime,
-}
-
-impl UserSession {
-    pub fn new(user_id: Uuid, username: String, token: String) -> Self {
-        Self {
-            user_id,
-            username,
-            token,
-            expires_at: std::time::SystemTime::now()
-                + std::time::Duration::from_secs(30 * 24 * 60 * 60), // 30 days
-        }
-    }
-
-    pub fn is_expired(&self) -> bool {
-        std::time::SystemTime::now() > self.expires_at
-    }
+/// Resource for end data
+#[derive(Resource)]
+pub struct EndData {
+    pub state: EndState,
 }

@@ -15,7 +15,7 @@
 </div>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/macroquad-0.4-ff69b4" alt="Macroquad">
+  <img src="https://img.shields.io/badge/bevy-0.15-ff69b4" alt="Bevy">
   <img src="https://img.shields.io/badge/rust-2021-orange" alt="Rust Edition">
 </p>
 
@@ -86,6 +86,20 @@ The game uses **beat detection algorithms** to analyze audio files in real-time 
 - 🎖️ **Achievements** - Unlock achievements for milestones
 - 🎵 **Per-Song Stats** - Track best scores and accuracy for each song
 - 💾 **Persistent Data** - Analytics saved to `analytics.json`
+
+### Professional Beatmap Editor & Asset Pipeline (Issue #14)
+- 🗺️ **Complete Beatmap Format** - JSON-based beatmap files with metadata, timing, and hit objects
+- 📝 **Visual Beatmap Editor** - Full-featured editor with timeline, tools, and properties panels
+- 🎯 **Multiple Hit Object Types** - Circles, sliders, and spinners support
+- ⏱️ **Timing Point System** - BPM changes and time signature support
+- 📐 **Grid Snapping** - Configurable grid with beat snap divisors (1/1 to 1/16)
+- 🔧 **Difficulty Settings** - Circle size, approach rate, overall difficulty, HP drain
+- 💾 **Save/Load System** - Persistent beatmap storage in `src/assets/beatmaps/`
+- 🔍 **Beatmap Browser** - Search and filter beatmaps by title, artist, or tags
+- ↩️ **Undo/Redo** - Full action history with configurable limits
+- 📋 **Copy/Paste** - Duplicate and arrange hit objects efficiently
+- 🎵 **Audio Preview** - Playback with seek controls and beat snapping
+- 📊 **Object Statistics** - Real-time count of circles, sliders, and spinners
 
 ---
 
@@ -171,6 +185,32 @@ All controls can be customized in the **Settings** menu:
    - Hit sounds
 3. Select a song and start practicing!
 
+### Beatmap Editor
+
+1. Click **"Beatmap Editor"** from the main menu
+2. Select an existing beatmap to edit or create a new one
+3. Use the editor tools to create your beatmap:
+
+#### Editor Controls
+| Key | Action |
+|-----|--------|
+| `Space` | Play/Pause audio |
+| `,` / `.` | Previous/Next beat |
+| `1-5` | Select tool (Select/Circle/Slider/Spinner/Delete) |
+| `Q` | Toggle new combo mode |
+| `Y` | Toggle grid snapping |
+| `G` | Toggle grid visibility |
+| `A,S,D,F` | Beat snap divisors (1/1, 1/2, 1/4, 1/8) |
+| `X,C` | Beat snap divisors (1/3, 1/6) |
+| `Ctrl+Z` | Undo |
+| `Ctrl+Shift+Z` | Redo |
+| `Ctrl+S` | Save beatmap |
+| `Ctrl+C` | Copy selected objects |
+| `Ctrl+V` | Paste objects |
+| `Delete` | Delete selected objects |
+| `+` / `-` | Timeline zoom |
+| `ESC` | Exit editor (saves automatically)
+
 ---
 
 ## 🎯 Gameplay <a name="gameplay"></a>
@@ -189,6 +229,44 @@ All controls can be customized in the **Settings** menu:
 1. Place your `.mp3` files in `src/assets/music/`
 2. Restart the game
 3. Your songs will appear in the song selection menu
+
+### Creating Beatmaps
+
+1. Click **"Beatmap Editor"** from the main menu
+2. Click **"+ Create New Beatmap"**
+3. Fill in the metadata (Title, Artist, Creator, Version)
+4. Select an audio file from `src/assets/music/`
+5. Use the editor tools to place hit objects:
+   - **Circle Tool (2)**: Click on the grid to place circles
+   - **Slider Tool (3)**: Click and drag to create sliders
+   - **Spinner Tool (4)**: Click to place spinners
+6. Set timing points for BPM changes
+7. Adjust difficulty settings (CS, AR, OD, HP)
+8. Press `Ctrl+S` to save your beatmap
+9. Beatmaps are saved to `src/assets/beatmaps/`
+
+### Beatmap File Format
+
+Beatmaps are stored as JSON files with the following structure:
+```json
+{
+  "version": 1,
+  "metadata": {
+    "title": "Song Title",
+    "artist": "Artist Name",
+    "creator": "Mapper Name",
+    "version": "Difficulty"
+  },
+  "timing_points": [...],
+  "hit_objects": [...],
+  "settings": {
+    "circle_size": 4.0,
+    "approach_rate": 9.0,
+    "overall_difficulty": 8.0,
+    "hp_drain": 5.0
+  }
+}
+```
 
 ---
 
@@ -291,13 +369,13 @@ yum-osu/
 │   ├── constants.rs      # Game constants and styling
 │   ├── config.rs         # Settings and customization system
 │   ├── analytics.rs      # Performance tracking and statistics
-│   ├── network.rs        # WebSocket client/server for multiplayer
-│   ├── accounts.rs       # User authentication, profiles, sessions
-│   ├── multiplayer.rs    # Game state synchronization, rooms, events
-│   ├── community.rs      # Leaderboards, friends, chat, tournaments
-│   ├── beatmap.rs        # Beat detection and circle spawning
+│   ├── beatmap.rs        # Beatmap data structures and asset pipeline
+│   ├── editor.rs         # Beatmap editor core logic and state
+│   ├── editor_ui.rs      # Editor UI rendering (timeline, tools, panels)
+│   ├── editor_input.rs   # Editor input handling and interactions
 │   └── assets/
 │       ├── music/        # MP3 files for gameplay
+│       ├── beatmaps/     # JSON beatmap files
 │       ├── images/       # UI images and textures
 │       └── fonts/        # Custom fonts
 ├── src/bin/
@@ -321,10 +399,10 @@ yum-osu/
 - **`constants.rs`** - Styling constants including cyberpunk color palette
 - **`config.rs`** - Settings system with key bindings, themes, audio, and practice mode configuration
 - **`analytics.rs`** - Performance tracking with grades, hit statistics, achievements, and session history
-- **`network.rs`** - WebSocket client/server implementation for real-time multiplayer communication
-- **`accounts.rs`** - User authentication with Argon2 password hashing, session management, and profiles
-- **`multiplayer.rs`** - Game state synchronization, room management, and event coordination
-- **`community.rs`** - Leaderboards, friends system, chat rooms, and tournaments
+- **`beatmap.rs`** - Beatmap data structures, file format, serialization, and asset management
+- **`editor.rs`** - Beatmap editor state, tools, timing system, and undo/redo
+- **`editor_ui.rs`** - Editor UI rendering including timeline, toolbar, panels, and playfield
+- **`editor_input.rs`** - Editor input handling, keyboard shortcuts, and mouse interactions
 
 ---
 
@@ -333,7 +411,7 @@ yum-osu/
 | Technology | Purpose |
 |------------|---------|
 | [Rust](https://www.rust-lang.org/) | Systems programming language |
-| [Macroquad](https://macroquad.rs/) | Lightweight game engine for rendering |
+| [Bevy](https://bevyengine.org/) | Data-driven game engine with ECS architecture |
 | [Rodio](https://github.com/RustAudio/rodio) | Audio playback |
 | [aubio](https://aubio.org/) | Audio analysis and beat detection |
 | [biquad](https://github.com/korken89/biquad-rs) | Audio filtering (low-pass for kick detection) |

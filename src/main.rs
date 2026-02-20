@@ -1,395 +1,535 @@
-mod constants;
-mod structs;
-mod audio;
-mod ui;
-mod game;
-mod config;
 mod analytics;
-mod network;
-mod accounts;
-mod multiplayer;
-mod community;
+mod audio;
+mod beatmap;
+mod config;
+mod constants;
+mod editor;
+mod editor_input;
+mod editor_ui;
+mod game;
+mod gamemode;
+mod structs;
+mod ui;
 
-use crate::structs::*;
+use crate::analytics::{Analytics, AnalyticsState};
+use crate::audio::gather_beats;
+use crate::beatmap::BeatmapAssets;
+use crate::config::{GameConfig, SettingsState};
 use crate::constants::*;
-use crate::audio::*;
-use crate::ui::*;
+use crate::editor::{EditorState, EditorUIState};
+use crate::editor_input::{handle_editor_input, handle_editor_ui_interactions, handle_save_shortcut, update_editor};
+use crate::editor_ui::{render_editor_hit_objects, setup_editor_ui};
 use crate::game::*;
-use crate::config::{ GameConfig, SettingsState, KeyBindings };
-use crate::analytics::{ Analytics, AnalyticsState };
-use crate::network::GameClient;
-use crate::accounts::AccountManager;
-use crate::multiplayer::GameCoordinator;
-use crate::community::CommunityManager;
+use crate::structs::*;
+use crate::ui::*;
 
-use macroquad::prelude::*;
-use rodio::{ Decoder, OutputStream, Sink };
-use std::{ sync::mpsc, thread, time::Instant, sync::Arc };
+use bevy::prelude::*;
+use bevy::window::WindowCloseRequested;
+use rodio::{Decoder, OutputStream, Sink};
+use std::time::Instant;
 
-fn handle_menu_state(
-    assets: &Assets, 
-    songs: &mut Vec<String>,
-    config: &mut GameConfig
-) -> GameState {
-    if let Some(selected) = draw_menu(assets) {
-        match selected.as_str() {
-            "Start Game" => {
-                *songs = load_songs_from_assets();
-                GameState::SongSelection
-            }
-            "Practice" => {
-                *songs = load_songs_from_assets();
-                GameState::PracticeMenu
-            }
-            "Multiplayer" => {
-                GameState::MultiplayerLobby
-            }
-            "Profile" => {
-                GameState::Profile
-            }
-            "Leaderboard" => {
-                GameState::Leaderboard
-            }
-            "Friends" => {
-                GameState::Friends
-            }
-            "Community Hub" => {
-                GameState::CommunityHub
-            }
-            "Analytics" => {
-                GameState::Analytics
-            }
-            "Settings" => {
-                GameState::Settings
-            }
-            "Exit" => {
-                GameState::Exit
-            }
-            _ => GameState::Menu,
-        }
-    } else {
-        GameState::Menu
-    }
+fn main() {
+    App::new()
+        .add_plugins(DefaultPlugins.set(window_config()))
+        .init_state::<AppState>()
+        .init_resource::<GameStateResource>()
+        .init_resource::<GameTime>()
+        .init_resource::<SettingsState>()
+        .init_resource::<AnalyticsState>()
+        .init_resource::<PracticeMenuState>()
+        .init_resource::<EditorState>()
+        .init_resource::<EditorUIState>()
+        .init_resource::<BeatmapAssets>()
+        .add_event::<GameEvent>()
+        .add_systems(Startup, setup)
+        .add_systems(Update, (handle_window_close, update_game_time))
+        // Menu state systems
+        .add_systems(OnEnter(AppState::Menu), (enter_menu, setup_menu_ui))
+        .add_systems(
+            Update,
+            (update_menu, handle_menu_interactions).run_if(in_state(AppState::Menu)),
+        )
+        .add_systems(OnExit(AppState::Menu), (exit_menu, cleanup_ui))
+        // Song selection state systems
+        .add_systems(
+            OnEnter(AppState::SongSelection),
+            (enter_song_selection, setup_song_selection_ui),
+        )
+        .add_systems(
+            Update,
+            (update_song_selection, handle_song_selection)
+                .run_if(in_state(AppState::SongSelection)),
+        )
+        .add_systems(OnExit(AppState::SongSelection), cleanup_ui)
+        // Practice menu state systems
+        .add_systems(
+            OnEnter(AppState::PracticeMenu),
+            (enter_practice_menu, setup_practice_menu_ui),
+        )
+        .add_systems(
+            Update,
+            update_practice_menu.run_if(in_state(AppState::PracticeMenu)),
+        )
+        .add_systems(OnExit(AppState::PracticeMenu), cleanup_ui)
+        // Loading state systems
+        .add_systems(
+            OnEnter(AppState::Loading),
+            (enter_loading, setup_loading_ui),
+        )
+        .add_systems(Update, update_loading.run_if(in_state(AppState::Loading)))
+        .add_systems(OnExit(AppState::Loading), cleanup_ui)
+        // ReadyToPlay state systems
+        .add_systems(
+            OnEnter(AppState::ReadyToPlay),
+            (enter_ready_to_play, setup_ready_ui),
+        )
+        .add_systems(
+            Update,
+            (update_ready_to_play, update_countdown).run_if(in_state(AppState::ReadyToPlay)),
+        )
+        .add_systems(OnExit(AppState::ReadyToPlay), cleanup_ui)
+        // Visualizing state systems
+        .add_systems(OnEnter(AppState::Visualizing), enter_visualizing)
+        .add_systems(
+            Update,
+            (
+                update_visualizing,
+                render_game_circles,
+                render_game_floating_texts,
+                render_game_score,
+            )
+                .run_if(in_state(AppState::Visualizing)),
+        )
+        .add_systems(OnExit(AppState::Visualizing), exit_visualizing)
+        // End state systems
+        .add_systems(OnEnter(AppState::End), (enter_end, setup_end_ui))
+        .add_systems(Update, update_end.run_if(in_state(AppState::End)))
+        .add_systems(OnExit(AppState::End), cleanup_ui)
+        // Settings state systems
+        .add_systems(
+            OnEnter(AppState::Settings),
+            (enter_settings, setup_settings_ui),
+        )
+        .add_systems(Update, update_settings.run_if(in_state(AppState::Settings)))
+        .add_systems(OnExit(AppState::Settings), cleanup_ui)
+        // Analytics state systems
+        .add_systems(
+            OnEnter(AppState::Analytics),
+            (enter_analytics, setup_analytics_ui),
+        )
+        .add_systems(
+            Update,
+            update_analytics.run_if(in_state(AppState::Analytics)),
+        )
+        .add_systems(OnExit(AppState::Analytics), cleanup_ui)
+        // Beatmap editor state systems
+        .add_systems(
+            OnEnter(AppState::BeatmapEditor),
+            (enter_beatmap_editor, setup_editor_ui),
+        )
+        .add_systems(
+            Update,
+            (
+                handle_editor_input,
+                handle_editor_ui_interactions,
+                handle_save_shortcut,
+                update_editor,
+                render_editor_hit_objects,
+            )
+                .run_if(in_state(AppState::BeatmapEditor)),
+        )
+        .add_systems(OnExit(AppState::BeatmapEditor), cleanup_ui)
+        // Beatmap selection state systems
+        .add_systems(
+            OnEnter(AppState::BeatmapSelection),
+            (enter_beatmap_selection, setup_beatmap_selection_ui),
+        )
+        .add_systems(
+            Update,
+            (update_beatmap_selection, handle_beatmap_selection)
+                .run_if(in_state(AppState::BeatmapSelection)),
+        )
+        .add_systems(OnExit(AppState::BeatmapSelection), cleanup_ui)
+        .run();
 }
 
-fn handle_song_selection_state(
-    selected_song: &mut String,
-    songs: &Vec<String>,
-    assets: &Assets,
-    config: &mut GameConfig
-) -> GameState {
-    let mut selection_state = SongSelectionState::new();
-
-    if let Some(song) = draw_choose_audio(&mut selection_state, 
-        songs, 
-        assets
-    ) {
-        *selected_song = song;
-        GameState::Playing
-    } else if is_key_pressed(KeyCode::Escape) {
-        GameState::Menu
-    } else {
-        GameState::SongSelection
-    }
+/// Application states
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
+pub enum AppState {
+    #[default]
+    Menu,
+    SongSelection,
+    PracticeMenu,
+    Playing,
+    Loading,
+    ReadyToPlay,
+    Visualizing,
+    End,
+    Settings,
+    Analytics,
+    BeatmapEditor,
+    BeatmapSelection,
 }
 
-fn handle_practice_menu_state(
-    practice_state: &mut PracticeMenuState,
-    songs: &Vec<String>,
-    assets: &Assets,
-    config: &mut GameConfig
-) -> GameState {
-    match draw_practice_menu(practice_state, songs, assets) {
-        Some(action) => {
-            if action == "start" {
-                if let Some(ref song) = practice_state.selected_song {
-                    config.practice.playback_speed = practice_state.playback_speed;
-                    config.practice.no_fail = practice_state.no_fail;
-                    config.practice.autoplay = practice_state.autoplay;
-                    config.practice.hit_sounds = practice_state.hit_sounds;
-                    GameState::Playing
-                } else {
-                    GameState::PracticeMenu
-                }
-            } else if action == "back" {
-                GameState::Menu
-            } else {
-                GameState::PracticeMenu
-            }
-        }
-        None => GameState::PracticeMenu,
-    }
+/// Game events for communication between systems
+#[derive(Event)]
+pub enum GameEvent {
+    StartGame,
+    SelectSong(String),
+    StartPractice,
+    OpenSettings,
+    OpenAnalytics,
+    Exit,
+    BackToMenu,
 }
 
-fn handle_playing_state(selected_song: &String) -> GameState {
-    // Start the beat detection in a new thread
-    let (tx, rx) = mpsc::channel();
-    let song_path = selected_song.clone();
-    thread::spawn(move || {
-        let beats = gather_beats(&song_path);
-        tx.send(beats).unwrap();
+/// Setup system - runs once at startup
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+    // Load font
+    let font_handle: Handle<Font> = asset_server.load("fonts/teknaf.otf");
+
+    // Insert resources
+    commands.insert_resource(GameAssets {
+        cyberpunk_font: font_handle,
     });
 
-    // Switch to the loading state
-    GameState::Loading {
-        rx,
+    // Load configuration
+    let config = GameConfig::load();
+    commands.insert_resource(config.clone());
+
+    // Load analytics
+    let analytics = Analytics::load();
+    commands.insert_resource(analytics);
+
+    // Initialize beatmap assets
+    let mut beatmap_assets = BeatmapAssets::default();
+    if let Err(e) = beatmap_assets.load_all() {
+        eprintln!("Failed to load beatmaps: {}", e);
+    }
+    commands.insert_resource(beatmap_assets);
+
+    // Setup audio
+    let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+    let sink = Sink::try_new(&stream_handle).unwrap();
+    commands.insert_resource(GameAudioSink { sink });
+    // Note: _stream must be kept alive, we'll store it in a resource
+    commands.insert_resource(AudioStream(_stream));
+
+    // Setup camera
+    commands.spawn(Camera2d);
+}
+
+/// Resource to hold audio stream (must be kept alive)
+/// Safety: OutputStream is not Send/Sync due to raw pointers, but we only use it on the main thread
+pub struct AudioStream(#[allow(dead_code)] OutputStream);
+
+// SAFETY: We promise to only use AudioStream on the main thread
+unsafe impl Send for AudioStream {}
+unsafe impl Sync for AudioStream {}
+
+/// Update game time
+fn update_game_time(mut game_time: ResMut<GameTime>) {
+    game_time.elapsed = game_time.start_time.elapsed().as_secs_f64();
+}
+
+/// Handle window close
+fn handle_window_close(
+    mut events: EventReader<WindowCloseRequested>,
+    config: Res<GameConfig>,
+    analytics: Res<Analytics>,
+    mut app_exit: EventWriter<AppExit>,
+) {
+    for _ in events.read() {
+        // Save config and analytics before exit
+        config.save();
+        analytics.save();
+        app_exit.send(AppExit::Success);
+    }
+}
+
+// ==================== MENU STATE ====================
+
+fn enter_menu(mut commands: Commands) {
+    commands.insert_resource(MenuData::default());
+}
+
+#[derive(Resource, Default)]
+pub struct MenuData {
+    pub buttons: Vec<(String, Rect)>,
+}
+
+fn update_menu(windows: Query<&Window>, mut menu_data: ResMut<MenuData>) {
+    if let Ok(window) = windows.get_single() {
+        let scr_width = window.width();
+        let scr_height = window.height();
+
+        let button_width = BUTTON_WIDTH;
+        let button_height = BUTTON_HEIGHT;
+        let button_spacing = BUTTON_SPACING;
+        let start_y = scr_height * 0.4;
+
+        let buttons = vec![
+            ("Start Game".to_string(), start_y),
+            (
+                "Practice".to_string(),
+                start_y + button_height + button_spacing,
+            ),
+            (
+                "Beatmap Editor".to_string(),
+                start_y + 2.0 * (button_height + button_spacing),
+            ),
+            (
+                "Analytics".to_string(),
+                start_y + 3.0 * (button_height + button_spacing),
+            ),
+            (
+                "Settings".to_string(),
+                start_y + 4.0 * (button_height + button_spacing),
+            ),
+            (
+                "Exit".to_string(),
+                start_y + 5.0 * (button_height + button_spacing),
+            ),
+        ];
+
+        menu_data.buttons.clear();
+        for (label, y_pos) in &buttons {
+            let button_x = (scr_width - button_width) / 2.0;
+            menu_data.buttons.push((
+                label.clone(),
+                Rect::new(button_x, *y_pos, button_width, button_height),
+            ));
+        }
+    }
+}
+
+fn exit_menu(mut commands: Commands) {
+    commands.remove_resource::<MenuData>();
+}
+
+// ==================== SONG SELECTION STATE ====================
+
+fn enter_song_selection(
+    mut game_state: ResMut<GameStateResource>,
+    mut selection_state: ResMut<SongSelectionState>,
+) {
+    game_state.songs = load_songs_from_assets();
+    *selection_state = SongSelectionState::new();
+}
+
+fn update_song_selection(
+    mut next_state: ResMut<NextState<AppState>>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+) {
+    if keyboard.just_pressed(KeyCode::Escape) {
+        next_state.set(AppState::Menu);
+    }
+}
+
+// ==================== PRACTICE MENU STATE ====================
+
+fn enter_practice_menu(
+    mut game_state: ResMut<GameStateResource>,
+    mut practice_state: ResMut<PracticeMenuState>,
+) {
+    game_state.songs = load_songs_from_assets();
+    *practice_state = PracticeMenuState::new();
+}
+
+fn update_practice_menu(
+    mut next_state: ResMut<NextState<AppState>>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+) {
+    if keyboard.just_pressed(KeyCode::Escape) {
+        next_state.set(AppState::Menu);
+    }
+}
+
+// ==================== PLAYING STATE ====================
+
+fn enter_playing(
+    mut commands: Commands,
+    game_state: Res<GameStateResource>,
+    mut next_state: ResMut<NextState<AppState>>,
+) {
+    commands.insert_resource(LoadingData {
+        beats: None,
         start_time: Instant::now(),
-    }
+        song_path: game_state.selected_song.clone(),
+    });
+
+    // Transition to loading state
+    next_state.set(AppState::Loading);
 }
 
-fn handle_loading_state(
-    rx: mpsc::Receiver<Vec<f64>>,
-    start_time: Instant,
-    selected_song: &String,
-    assets: &Assets,
-    config: &GameConfig
-) -> GameState {
-    // Display the loading bar
-    let loading_time = start_time.elapsed().as_secs_f32();
-    let message = if config.practice.playback_speed != 1.0 {
-        Some(&format!("Loading... ({:.2}x speed)", config.practice.playback_speed))
-    } else {
-        None
-    };
-    draw_loading_bar(loading_time, assets, message.map(|s| s.as_str()));
+// ==================== LOADING STATE ====================
 
-    // Check if the beats are received
-    if let Ok(beats) = rx.try_recv() {
-        // Load the audio file but don't play it yet
-        let file = std::fs::File::open(selected_song).expect("Failed to open audio file");
-        let reader = std::io::BufReader::new(file);
-        let source = Decoder::new(reader).expect("Failed to decode audio");
+fn enter_loading() {
+    // Loading screen setup is handled by setup_loading_ui
+}
 
-        // Switch to the ready to play state
-        GameState::ReadyToPlay {
-            beats,
+fn update_loading(
+    mut commands: Commands,
+    mut loading_data: ResMut<LoadingData>,
+    mut next_state: ResMut<NextState<AppState>>,
+) {
+    // Load beats synchronously (we're in a loading screen, so this is fine)
+    if loading_data.beats.is_none() {
+        let beats = gather_beats(&loading_data.song_path);
+        loading_data.beats = Some(beats);
+    }
+
+    // Once we have beats, transition to ready
+    if let Some(ref beats) = loading_data.beats {
+        commands.insert_resource(ReadyToPlayData {
+            beats: beats.clone(),
             ready_time: Instant::now(),
-            source: Some(source),
-        }
-    } else {
-        // Stay in the loading state
-        GameState::Loading {
-            rx,
-            start_time,
-        }
-    }
-}
-
-fn handle_ready_to_play_state(
-    beats: Vec<f64>,
-    ready_time: Instant,
-    mut source: Option<Decoder<std::io::BufReader<std::fs::File>>>,
-    sink: &mut Sink,
-    assets: &Assets,
-    config: &GameConfig,
-    song_name: &str
-) -> GameState {
-    // Display the countdown
-    let elapsed = ready_time.elapsed().as_secs_f32();
-    clear_background(DARK_BACKGROUND);
-    if elapsed < (COUNTDOWN_DURATION as f32) {
-        let scr_width = screen_width();
-        let scr_height = screen_height();
-
-        // Draw countdown
-        let countdown_text = format!("Starting in {:.0}", COUNTDOWN_DURATION - (elapsed as f64));
-
-        let text_dimensions = measure_text(
-            &countdown_text,
-            Some(&assets.cyberpunk_font),
-            FONT_SIZE as u16,
-            1.0
-        );
-        let text_x = (scr_width - text_dimensions.width) / 2.0;
-        let text_y = scr_height / 2.0;
-
-        draw_text_ex(&countdown_text, text_x, text_y, TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: FONT_SIZE,
-            color: NEON_GREEN,
-            ..Default::default()
         });
 
-        // Show practice mode info if active
-        if config.practice.playback_speed != 1.0 || config.practice.no_fail {
-            let practice_info = format!(
-                "Practice: {:.2}x speed {}{}",
-                config.practice.playback_speed,
-                if config.practice.no_fail { "| No-Fail " } else { "" },
-                if config.practice.autoplay { "| Autoplay" } else { "" }
-            );
-            let info_dim = measure_text(&practice_info,
-                Some(&assets.cyberpunk_font),
-                20,
-                1.0
-            );
-            draw_text_ex(&practice_info, 
-                (scr_width - info_dim.width) / 2.0, 
-                text_y + 50.0, 
-                TextParams {
-                    font: Some(&assets.cyberpunk_font),
-                    font_size: 20,
-                    color: NEON_YELLOW,
-                    ..Default::default()
-                }
-            );
-        }
-
-        GameState::ReadyToPlay {
-            beats,
-            ready_time,
-            source,
-        }
-    } else {
-        // Start the audio playback
-        if let Some(source) = source.take() {
-            // Apply playback speed if needed
-            let speed = config.practice.playback_speed;
-            if speed != 1.0 {
-                // Note: rodio speed modification would require additional implementation
-                sink.append(source);
-            } else {
-                sink.append(source);
-            }
-            sink.play();
-        }
-
-        // Initialize the visualization state
-        let (width, height) = (screen_width(), screen_height());
-        let mut rng = ::rand::thread_rng();
-
-        let spawn_radius = calculate_spawn_radius(width, height);
-        let center = Vec2::new(width / 2.0, height / 2.0);
-
-        let circles = initialize_circles(
-            &beats,
-            &mut rng,
-            spawn_radius,
-            center,
-            SHRINK_TIME,
-            COUNTDOWN_DURATION,
-            config
-        );
-
-        let vis_state = VisualizingState::new(
-            beats.clone(),
-            circles,
-            config.clone(),
-            song_name.to_string()
-        );
-        let score = 0;
-        let floating_texts = Vec::with_capacity(10); // Pre-allocate with reasonable capacity
-
-        GameState::Visualizing(
-            Box::new(VisualizingState {
-                beats,
-                start_time: Instant::now(),
-                circles,
-                score,
-                floating_texts,
-            })
-        )
+        commands.remove_resource::<LoadingData>();
+        next_state.set(AppState::ReadyToPlay);
     }
 }
 
-fn handle_visualizing_state(
-    mut vis_state: Box<VisualizingState>,
-    sink: &mut Sink,
-    assets: &Assets,
-    config: &GameConfig,
-    analytics: &mut Analytics
-) -> GameState {
-    // Adjust elapsed time for playback speed
-    let base_elapsed = vis_state.start_time.elapsed().as_secs_f64();
-    let elapsed = if vis_state.playback_speed != 1.0 {
-        base_elapsed * vis_state.playback_speed as f64
+// ==================== READY TO PLAY STATE ====================
+
+fn enter_ready_to_play() {
+    // Setup countdown
+}
+
+fn update_ready_to_play(
+    mut commands: Commands,
+    ready_data: Res<ReadyToPlayData>,
+    mut next_state: ResMut<NextState<AppState>>,
+    mut audio_sink: ResMut<GameAudioSink>,
+    config: Res<GameConfig>,
+    windows: Query<&Window>,
+    game_state: Res<GameStateResource>,
+) {
+    let elapsed = ready_data.ready_time.elapsed().as_secs_f32();
+
+    if elapsed >= COUNTDOWN_DURATION as f32 {
+        // Load and start audio playback
+        if let Ok(file) = std::fs::File::open(&game_state.selected_song) {
+            let reader = std::io::BufReader::new(file);
+            if let Ok(source) = Decoder::new(reader) {
+                audio_sink.sink.append(source);
+                audio_sink.sink.play();
+            }
+        }
+
+        // Initialize visualization state
+        if let Ok(window) = windows.get_single() {
+            let width = window.width();
+            let height = window.height();
+            let mut rng = rand::thread_rng();
+
+            let spawn_radius = calculate_spawn_radius(width, height);
+            let center = Vec2::new(width / 2.0, height / 2.0);
+
+            let circles = initialize_circles(
+                &ready_data.beats,
+                &mut rng,
+                spawn_radius,
+                center,
+                SHRINK_TIME,
+                COUNTDOWN_DURATION,
+                &config,
+            );
+
+            let vis_state = VisualizingState::new(
+                ready_data.beats.clone(),
+                circles,
+                config.clone(),
+                game_state.selected_song.clone(),
+            );
+
+            commands.insert_resource(VisualizingData {
+                state: vis_state,
+                start_time: Instant::now(),
+            });
+        }
+
+        commands.remove_resource::<ReadyToPlayData>();
+        next_state.set(AppState::Visualizing);
+    }
+}
+
+// ==================== VISUALIZING STATE ====================
+
+fn enter_visualizing() {
+    // Setup visualization
+}
+
+fn update_visualizing(
+    mut visualizing_data: ResMut<VisualizingData>,
+    mut next_state: ResMut<NextState<AppState>>,
+    mut audio_sink: ResMut<GameAudioSink>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    config: Res<GameConfig>,
+    mut analytics: ResMut<Analytics>,
+    windows: Query<&Window>,
+    mut commands: Commands,
+) {
+    let base_elapsed = visualizing_data.start_time.elapsed().as_secs_f64();
+    let elapsed = if visualizing_data.state.playback_speed != 1.0 {
+        base_elapsed * visualizing_data.state.playback_speed as f64
     } else {
         base_elapsed
     };
 
-    clear_background(DARK_BACKGROUND);
+    // Get mouse position for hit detection
+    let mut mouse_pos = Vec2::ZERO;
 
-    // Handle inputs, update circles, draw circles, etc.
-    handle_key_hits(
-        &mut vis_state.circles, 
-        elapsed, 
-        &mut vis_state, 
-        SHRINK_TIME,
-        config
-    );
-    
-    handle_missed_circles(
-        &mut vis_state.circles,
-        elapsed,
-        &mut vis_state,
-        SHRINK_TIME
-    );
-    
-    draw_circles(&vis_state.circles, 
-        elapsed, 
-        SHRINK_TIME,
-        config
-    );
-    
-    draw_floating_texts(&mut vis_state.floating_texts, 
-        elapsed, 
-        assets
-    );
-    
-    draw_score(
-        vis_state.score, 
-        vis_state.combo,
-        vis_state.max_combo,
-        assets
-    );
-
-    // Draw practice mode indicators
-    if vis_state.practice_mode {
-        let scr_width = screen_width();
-        let practice_text = format!("Practice: {:.2}x", vis_state.playback_speed);
-        draw_text_ex(&practice_text, 
-            scr_width - 150.0, 
-            20.0, 
-            TextParams {
-                font: Some(&assets.cyberpunk_font),
-                font_size: 16,
-                color: NEON_YELLOW,
-                ..Default::default()
-            }
-        );
-
-        if vis_state.no_fail {
-            draw_text_ex("NO-FAIL", scr_width - 150.0, 40.0, TextParams {
-                font: Some(&assets.cyberpunk_font),
-                font_size: 14,
-                color: NEON_GREEN,
-                ..Default::default()
-            });
+    if let Ok(window) = windows.get_single() {
+        if let Some(cursor_pos) = window.cursor_position() {
+            mouse_pos = Vec2::new(
+                cursor_pos.x - window.width() / 2.0,
+                window.height() / 2.0 - cursor_pos.y,
+            );
         }
     }
 
-    // Check for exit
-    if is_key_pressed(config.key_bindings.exit_key()) {
-        sink.stop();
-        
-        // Save analytics if enabled
-        if let Some(session) = vis_state.finish_session() {
+    // Check for key presses
+    let key_pressed = keyboard.just_pressed(config.key_bindings.primary_hit_key())
+        || keyboard.just_pressed(config.key_bindings.secondary_hit_key());
+
+    // Handle key hits with mouse position
+    if key_pressed {
+        handle_key_hits_with_mouse(
+            &mut visualizing_data.state.circles,
+            elapsed,
+            &mut visualizing_data.state,
+            SHRINK_TIME,
+            &config,
+            mouse_pos,
+        );
+    }
+
+    // Handle missed circles
+    let should_end_game = handle_missed_circles(
+        &mut visualizing_data.state.circles,
+        elapsed,
+        &mut visualizing_data.state,
+        SHRINK_TIME,
+    );
+
+    // Check if game should end due to survival mode
+    if should_end_game {
+        audio_sink.sink.stop();
+
+        if let Some(session) = visualizing_data.state.finish_session() {
             if config.save_analytics {
                 analytics.add_session(session);
             }
         }
-        
-        return GameState::Menu;
-    }
 
-    // Check if music has ended
-    if sink.empty() {
-        // Create end state
-        let active_session = vis_state.finish_session();
-        
+        // Create end state with survival info
+        let active_session = visualizing_data.state.finish_session();
+
         let end_state = EndState {
-            score: vis_state.score,
-            max_combo: vis_state.max_combo,
+            score: visualizing_data.state.score,
+            max_combo: visualizing_data.state.max_combo,
             hits: if let Some(ref session) = active_session {
                 session.hits.clone()
             } else {
@@ -405,949 +545,454 @@ fn handle_visualizing_state(
             } else {
                 crate::analytics::Grade::F
             },
-            full_combo: vis_state.max_combo > 0 && 
-                vis_state.circles.iter().all(|c| c.hit || c.missed) &&
-                vis_state.circles.iter().filter(|c| c.missed).count() == 0,
-            song_name: vis_state.song_name.clone(),
-            practice_mode: vis_state.practice_mode,
-            playback_speed: vis_state.playback_speed,
-            new_best: false, // Will be set later
+            full_combo: false, // Can't be full combo if you ran out of lives
+            song_name: visualizing_data.state.song_name.clone(),
+            practice_mode: visualizing_data.state.practice_mode,
+            playback_speed: visualizing_data.state.playback_speed,
+            new_best: false,
             previous_best: 0,
+            game_mode: visualizing_data.state.game_settings.mode,
+            difficulty: visualizing_data.state.game_settings.difficulty,
+            modifiers: visualizing_data.state.game_settings.modifiers.clone(),
         };
 
-        // Save analytics
         if config.save_analytics {
             if let Some(session) = active_session {
                 analytics.add_session(session);
             }
         }
 
-        return GameState::End(Box::new(end_state));
+        commands.insert_resource(EndData { state: end_state });
+        next_state.set(AppState::End);
+        return;
     }
 
-    GameState::Visualizing(vis_state)
-}
+    // Check for exit
+    if keyboard.just_pressed(config.key_bindings.exit_key()) {
+        audio_sink.sink.stop();
 
-fn handle_end_state(
-    end_state: Box<EndState>,
-    assets: &Assets
-) -> GameState {
-    match draw_end_screen(&end_state,
-        assets
-    ) {
-        Some(_) => GameState::Menu,
-        None => GameState::End(end_state),
+        if let Some(session) = visualizing_data.state.finish_session() {
+            if config.save_analytics {
+                analytics.add_session(session);
+            }
+        }
+
+        next_state.set(AppState::Menu);
+        return;
     }
-}
 
-fn handle_settings_state(
-    settings_state: &mut SettingsState,
-    config: &mut GameConfig,
-    assets: &Assets
-) -> GameState {
-    match draw_settings(settings_state, config, assets) {
-        Some(action) => {
-            if action == "back" || action == "saved" {
-                GameState::Menu
+    // Check if music has ended
+    if audio_sink.sink.empty() {
+        let active_session = visualizing_data.state.finish_session();
+
+        let end_state = EndState {
+            score: visualizing_data.state.score,
+            max_combo: visualizing_data.state.max_combo,
+            hits: if let Some(ref session) = active_session {
+                session.hits.clone()
             } else {
-                GameState::Settings
-            }
-        }
-        None => GameState::Settings,
-    }
-}
-
-fn handle_analytics_state(
-    analytics_state: &mut AnalyticsState,
-    analytics: &Analytics,
-    assets: &Assets
-) -> GameState {
-    match draw_analytics(analytics_state, analytics, assets) {
-        Some(action) => {
-            if action == "back" {
-                GameState::Menu
+                crate::analytics::HitStats::new()
+            },
+            accuracy: if let Some(ref session) = active_session {
+                session.accuracy
             } else {
-                GameState::Analytics
-            }
-        }
-        None => GameState::Analytics,
-    }
-}
-
-// Handler for login state
-fn handle_login_state(
-    login_state: &mut LoginState,
-    assets: &Assets,
-    account_manager: &Arc<AccountManager>,
-    user_session: &mut Option<UserSession>
-) -> GameState {
-    clear_background(DARK_BACKGROUND);
-
-    // Draw login UI
-    let screen_width = screen_width();
-    let screen_height = screen_height();
-
-    // Title
-    let title = "Login";
-    draw_text_ex(title,
-        (screen_width - measure_text(title, Some(&assets.cyberpunk_font), 60, 1.0).width) / 2.0,
-        screen_height * 0.2,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 60,
-            color: NEON_CYAN,
-            ..Default::default()
-        }
-    );
-
-    // Username field
-    draw_text_ex(&format!("Username: {}", login_state.username),
-        screen_width * 0.3,
-        screen_height * 0.4,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 30,
-            color: WHITE,
-            ..Default::default()
-        }
-    );
-
-    // Password field (masked)
-    let password_display = "*".repeat(login_state.password.len());
-    draw_text_ex(&format!("Password: {}", password_display),
-        screen_width * 0.3,
-        screen_height * 0.5,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 30,
-            color: WHITE,
-            ..Default::default()
-        }
-    );
-
-    // Error message
-    if let Some(ref error) = login_state.error_message {
-        draw_text_ex(error,
-            (screen_width - measure_text(error, Some(&assets.cyberpunk_font), 24, 1.0).width) / 2.0,
-            screen_height * 0.6,
-            TextParams {
-                font: Some(&assets.cyberpunk_font),
-                font_size: 24,
-                color: NEON_RED,
-                ..Default::default()
-            }
-        );
-    }
-
-    // Instructions
-    draw_text_ex("Press ENTER to login, R to register, ESC to back to menu",
-        (screen_width - measure_text("Press ENTER to login, R to register, ESC to back to menu",
-            Some(&assets.cyberpunk_font), 20, 1.0).width) / 2.0,
-        screen_height * 0.8,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 20,
-            color: NEON_YELLOW,
-            ..Default::default()
-        }
-    );
-
-    // Handle input
-    if is_key_pressed(KeyCode::Escape) {
-        GameState::Menu
-    } else if is_key_pressed(KeyCode::Enter) && !login_state.username.is_empty() && !login_state.password.is_empty() {
-        // Attempt login
-        // For demo, we'll create a session directly
-        *user_session = Some(UserSession::new(
-            uuid::Uuid::new_v4(),
-            login_state.username.clone(),
-            "demo_token".to_string()
-        ));
-        GameState::Menu
-    } else if is_key_pressed(KeyCode::R) {
-        GameState::Register
-    } else {
-        GameState::Login
-    }
-}
-
-// Handler for register state
-fn handle_register_state(
-    register_state: &mut RegisterState,
-    assets: &Assets,
-    account_manager: &Arc<AccountManager>
-) -> GameState {
-    clear_background(DARK_BACKGROUND);
-
-    let screen_width = screen_width();
-    let screen_height = screen_height();
-
-    // Title
-    let title = "Register";
-    draw_text_ex(title,
-        (screen_width - measure_text(title, Some(&assets.cyberpunk_font), 60, 1.0).width) / 2.0,
-        screen_height * 0.15,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 60,
-            color: NEON_CYAN,
-            ..Default::default()
-        }
-    );
-
-    // Fields
-    draw_text_ex(&format!("Username: {}", register_state.username),
-        screen_width * 0.3,
-        screen_height * 0.3,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 24,
-            color: WHITE,
-            ..Default::default()
-        }
-    );
-
-    draw_text_ex(&format!("Email: {}", register_state.email),
-        screen_width * 0.3,
-        screen_height * 0.4,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 24,
-            color: WHITE,
-            ..Default::default()
-        }
-    );
-
-    let password_display = "*".repeat(register_state.password.len());
-    draw_text_ex(&format!("Password: {}", password_display),
-        screen_width * 0.3,
-        screen_height * 0.5,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 24,
-            color: WHITE,
-            ..Default::default()
-        }
-    );
-
-    let confirm_display = "*".repeat(register_state.confirm_password.len());
-    draw_text_ex(&format!("Confirm Password: {}", confirm_display),
-        screen_width * 0.3,
-        screen_height * 0.6,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 24,
-            color: WHITE,
-            ..Default::default()
-        }
-    );
-
-    // Error message
-    if let Some(ref error) = register_state.error_message {
-        draw_text_ex(error,
-            (screen_width - measure_text(error, Some(&assets.cyberpunk_font), 24, 1.0).width) / 2.0,
-            screen_height * 0.7,
-            TextParams {
-                font: Some(&assets.cyberpunk_font),
-                font_size: 24,
-                color: NEON_RED,
-                ..Default::default()
-            }
-        );
-    }
-
-    // Instructions
-    draw_text_ex("Press ENTER to register, ESC to back",
-        (screen_width - measure_text("Press ENTER to register, ESC to back",
-            Some(&assets.cyberpunk_font), 20, 1.0).width) / 2.0,
-        screen_height * 0.85,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 20,
-            color: NEON_YELLOW,
-            ..Default::default()
-        }
-    );
-
-    if is_key_pressed(KeyCode::Escape) {
-        GameState::Login
-    } else {
-        GameState::Register
-    }
-}
-
-// Handler for multiplayer lobby state
-fn handle_multiplayer_lobby_state(
-    lobby_state: &mut MultiplayerLobbyState,
-    assets: &Assets,
-    game_client: &GameClient,
-    user_session: &Option<UserSession>
-) -> GameState {
-    clear_background(DARK_BACKGROUND);
-
-    let screen_width = screen_width();
-    let screen_height = screen_height();
-
-    // Title
-    let title = "Multiplayer Lobby";
-    draw_text_ex(title,
-        (screen_width - measure_text(title, Some(&assets.cyberpunk_font), 50, 1.0).width) / 2.0,
-        screen_height * 0.1,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 50,
-            color: NEON_CYAN,
-            ..Default::default()
-        }
-    );
-
-    // Show connected status
-    let status = if user_session.is_some() { "Connected" } else { "Not Logged In" };
-    draw_text_ex(status,
-        screen_width * 0.8,
-        screen_height * 0.1,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 20,
-            color: if user_session.is_some() { NEON_GREEN } else { NEON_RED },
-            ..Default::default()
-        }
-    );
-
-    // Placeholder room list
-    draw_text_ex("Available Rooms (Demo):",
-        screen_width * 0.1,
-        screen_height * 0.25,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 30,
-            color: NEON_YELLOW,
-            ..Default::default()
-        }
-    );
-
-    draw_text_ex("  Room 1 - 2/4 players - Hosted by Player1",
-        screen_width * 0.1,
-        screen_height * 0.32,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 24,
-            color: WHITE,
-            ..Default::default()
-        }
-    );
-
-    draw_text_ex("  Room 2 - 3/4 players - Hosted by Player2",
-        screen_width * 0.1,
-        screen_height * 0.38,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 24,
-            color: WHITE,
-            ..Default::default()
-        }
-    );
-
-    // Instructions
-    draw_text_ex("Press C to create room, J to join, ESC to back",
-        (screen_width - measure_text("Press C to create room, J to join, ESC to back",
-            Some(&assets.cyberpunk_font), 20, 1.0).width) / 2.0,
-        screen_height * 0.9,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 20,
-            color: NEON_YELLOW,
-            ..Default::default()
-        }
-    );
-
-    if is_key_pressed(KeyCode::Escape) {
-        GameState::Menu
-    } else {
-        GameState::MultiplayerLobby
-    }
-}
-
-// Handler for profile state
-fn handle_profile_state(
-    profile_state: &mut ProfileState,
-    assets: &Assets,
-    account_manager: &Arc<AccountManager>,
-    user_session: &Option<UserSession>
-) -> GameState {
-    clear_background(DARK_BACKGROUND);
-
-    let screen_width = screen_width();
-    let screen_height = screen_height();
-
-    // Title
-    let title = "Profile";
-    draw_text_ex(title,
-        (screen_width - measure_text(title, Some(&assets.cyberpunk_font), 50, 1.0).width) / 2.0,
-        screen_height * 0.1,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 50,
-            color: NEON_CYAN,
-            ..Default::default()
-        }
-    );
-
-    // Show user info
-    if let Some(session) = user_session {
-        draw_text_ex(&format!("Username: {}", session.username),
-            screen_width * 0.1,
-            screen_height * 0.3,
-            TextParams {
-                font: Some(&assets.cyberpunk_font),
-                font_size: 30,
-                color: WHITE,
-                ..Default::default()
-            }
-        );
-    } else {
-        draw_text_ex("Not logged in",
-            screen_width * 0.1,
-            screen_height * 0.3,
-            TextParams {
-                font: Some(&assets.cyberpunk_font),
-                font_size: 30,
-                color: NEON_RED,
-                ..Default::default()
-            }
-        );
-    }
-
-    // Tabs
-    draw_text_ex("[Overview] [Stats] [Achievements] [Scores]",
-        (screen_width - measure_text("[Overview] [Stats] [Achievements] [Scores]",
-            Some(&assets.cyberpunk_font), 24, 1.0).width) / 2.0,
-        screen_height * 0.5,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 24,
-            color: NEON_YELLOW,
-            ..Default::default()
-        }
-    );
-
-    draw_text_ex("Press TAB to switch tabs, ESC to back",
-        (screen_width - measure_text("Press TAB to switch tabs, ESC to back",
-            Some(&assets.cyberpunk_font), 20, 1.0).width) / 2.0,
-        screen_height * 0.9,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 20,
-            color: NEON_YELLOW,
-            ..Default::default()
-        }
-    );
-
-    if is_key_pressed(KeyCode::Escape) {
-        GameState::Menu
-    } else {
-        GameState::Profile
-    }
-}
-
-// Handler for leaderboard state
-fn handle_leaderboard_state(
-    leaderboard_state: &mut LeaderboardState,
-    assets: &Assets,
-    account_manager: &Arc<AccountManager>
-) -> GameState {
-    clear_background(DARK_BACKGROUND);
-
-    let screen_width = screen_width();
-    let screen_height = screen_height();
-
-    // Title
-    let title = "Leaderboard";
-    draw_text_ex(title,
-        (screen_width - measure_text(title, Some(&assets.cyberpunk_font), 50, 1.0).width) / 2.0,
-        screen_height * 0.1,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 50,
-            color: NEON_CYAN,
-            ..Default::default()
-        }
-    );
-
-    // Tabs
-    draw_text_ex("[Global] [Country] [Friends]",
-        (screen_width - measure_text("[Global] [Country] [Friends]",
-            Some(&assets.cyberpunk_font), 24, 1.0).width) / 2.0,
-        screen_height * 0.2,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 24,
-            color: NEON_YELLOW,
-            ..Default::default()
-        }
-    );
-
-    // Placeholder leaderboard
-    draw_text_ex("Rank  |  Player        |  Score      |  Accuracy",
-        screen_width * 0.1,
-        screen_height * 0.35,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 20,
-            color: NEON_CYAN,
-            ..Default::default()
-        }
-    );
-
-    draw_text_ex("  1   |  ProPlayer     |  9,999,999  |  99.9%",
-        screen_width * 0.1,
-        screen_height * 0.42,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 20,
-            color: NEON_ORANGE,
-            ..Default::default()
-        }
-    );
-
-    draw_text_ex("  2   |  MasterRhythm  |  8,888,888  |  99.5%",
-        screen_width * 0.1,
-        screen_height * 0.49,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 20,
-            color: WHITE,
-            ..Default::default()
-        }
-    );
-
-    draw_text_ex("  3   |  BeatMaster    |  7,777,777  |  99.2%",
-        screen_width * 0.1,
-        screen_height * 0.56,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 20,
-            color: WHITE,
-            ..Default::default()
-        }
-    );
-
-    draw_text_ex("Press TAB to switch tabs, ESC to back",
-        (screen_width - measure_text("Press TAB to switch tabs, ESC to back",
-            Some(&assets.cyberpunk_font), 20, 1.0).width) / 2.0,
-        screen_height * 0.9,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 20,
-            color: NEON_YELLOW,
-            ..Default::default()
-        }
-    );
-
-    if is_key_pressed(KeyCode::Escape) {
-        GameState::Menu
-    } else {
-        GameState::Leaderboard
-    }
-}
-
-// Handler for friends state
-fn handle_friends_state(
-    friends_state: &mut FriendsState,
-    assets: &Assets,
-    account_manager: &Arc<AccountManager>,
-    user_session: &Option<UserSession>
-) -> GameState {
-    clear_background(DARK_BACKGROUND);
-
-    let screen_width = screen_width();
-    let screen_height = screen_height();
-
-    // Title
-    let title = "Friends";
-    draw_text_ex(title,
-        (screen_width - measure_text(title, Some(&assets.cyberpunk_font), 50, 1.0).width) / 2.0,
-        screen_height * 0.1,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 50,
-            color: NEON_CYAN,
-            ..Default::default()
-        }
-    );
-
-    // Placeholder friends list
-    draw_text_ex("Friends List:",
-        screen_width * 0.1,
-        screen_height * 0.25,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 30,
-            color: NEON_YELLOW,
-            ..Default::default()
-        }
-    );
-
-    draw_text_ex("  Friend1 - Online - Playing: Song.mp3",
-        screen_width * 0.1,
-        screen_height * 0.32,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 24,
-            color: NEON_GREEN,
-            ..Default::default()
-        }
-    );
-
-    draw_text_ex("  Friend2 - Offline - Last seen: 2h ago",
-        screen_width * 0.1,
-        screen_height * 0.38,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 24,
-            color: GRAY,
-            ..Default::default()
-        }
-    );
-
-    draw_text_ex("Press F to find friends, ESC to back",
-        (screen_width - measure_text("Press F to find friends, ESC to back",
-            Some(&assets.cyberpunk_font), 20, 1.0).width) / 2.0,
-        screen_height * 0.9,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 20,
-            color: NEON_YELLOW,
-            ..Default::default()
-        }
-    );
-
-    if is_key_pressed(KeyCode::Escape) {
-        GameState::Menu
-    } else {
-        GameState::Friends
-    }
-}
-
-// Handler for community hub state
-fn handle_community_hub_state(
-    community_hub_state: &mut CommunityHubState,
-    assets: &Assets,
-    community_manager: &Arc<CommunityManager>,
-    user_session: &Option<UserSession>
-) -> GameState {
-    clear_background(DARK_BACKGROUND);
-
-    let screen_width = screen_width();
-    let screen_height = screen_height();
-
-    // Title
-    let title = "Community Hub";
-    draw_text_ex(title,
-        (screen_width - measure_text(title, Some(&assets.cyberpunk_font), 50, 1.0).width) / 2.0,
-        screen_height * 0.1,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 50,
-            color: NEON_CYAN,
-            ..Default::default()
-        }
-    );
-
-    // Tabs
-    draw_text_ex("[Tournaments] [Chat] [Events]",
-        (screen_width - measure_text("[Tournaments] [Chat] [Events]",
-            Some(&assets.cyberpunk_font), 24, 1.0).width) / 2.0,
-        screen_height * 0.25,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 24,
-            color: NEON_YELLOW,
-            ..Default::default()
-        }
-    );
-
-    // Placeholder tournaments
-    draw_text_ex("Active Tournaments:",
-        screen_width * 0.1,
-        screen_height * 0.4,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 30,
-            color: NEON_YELLOW,
-            ..Default::default()
-        }
-    );
-
-    draw_text_ex("  Weekly Championship - 32/64 players - Prize: 1000 pts",
-        screen_width * 0.1,
-        screen_height * 0.47,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 24,
-            color: WHITE,
-            ..Default::default()
-        }
-    );
-
-    draw_text_ex("  Monthly Showdown - Registration Open",
-        screen_width * 0.1,
-        screen_height * 0.54,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 24,
-            color: WHITE,
-            ..Default::default()
-        }
-    );
-
-    draw_text_ex("Press TAB to switch tabs, ESC to back",
-        (screen_width - measure_text("Press TAB to switch tabs, ESC to back",
-            Some(&assets.cyberpunk_font), 20, 1.0).width) / 2.0,
-        screen_height * 0.9,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 20,
-            color: NEON_YELLOW,
-            ..Default::default()
-        }
-    );
-
-    if is_key_pressed(KeyCode::Escape) {
-        GameState::Menu
-    } else {
-        GameState::CommunityHub
-    }
-}
-
-// Handler for tournament state
-fn handle_tournament_state(
-    tournament_state: &mut TournamentState,
-    assets: &Assets,
-    community_manager: &Arc<CommunityManager>,
-    user_session: &Option<UserSession>
-) -> GameState {
-    clear_background(DARK_BACKGROUND);
-
-    let screen_width = screen_width();
-    let screen_height = screen_height();
-
-    // Title
-    let title = "Tournament Details";
-    draw_text_ex(title,
-        (screen_width - measure_text(title, Some(&assets.cyberpunk_font), 50, 1.0).width) / 2.0,
-        screen_height * 0.1,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 50,
-            color: NEON_CYAN,
-            ..Default::default()
-        }
-    );
-
-    // Placeholder tournament details
-    draw_text_ex("Tournament: Weekly Championship",
-        screen_width * 0.1,
-        screen_height * 0.3,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 30,
-            color: NEON_YELLOW,
-            ..Default::default()
-        }
-    );
-
-    draw_text_ex("Status: Registration Open",
-        screen_width * 0.1,
-        screen_height * 0.37,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 24,
-            color: NEON_GREEN,
-            ..Default::default()
-        }
-    );
-
-    draw_text_ex("Players: 32/64",
-        screen_width * 0.1,
-        screen_height * 0.44,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 24,
-            color: WHITE,
-            ..Default::default()
-        }
-    );
-
-    draw_text_ex("Prize: 1000 points",
-        screen_width * 0.1,
-        screen_height * 0.51,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 24,
-            color: NEON_ORANGE,
-            ..Default::default()
-        }
-    );
-
-    draw_text_ex("Press ENTER to join, ESC to back",
-        (screen_width - measure_text("Press ENTER to join, ESC to back",
-            Some(&assets.cyberpunk_font), 20, 1.0).width) / 2.0,
-        screen_height * 0.9,
-        TextParams {
-            font: Some(&assets.cyberpunk_font),
-            font_size: 20,
-            color: NEON_YELLOW,
-            ..Default::default()
-        }
-    );
-
-    if is_key_pressed(KeyCode::Escape) {
-        GameState::CommunityHub
-    } else {
-        GameState::Tournament
-    }
-}
-
-// Main game loop
-#[macroquad::main(window_conf)]
-async fn main() {
-    let mut state = GameState::Menu;
-    let mut selected_song = String::new();
-    let mut songs = Vec::new();
-
-    // Load or create configuration
-    let mut config = GameConfig::load();
-    
-    // Load analytics
-    let mut analytics = Analytics::load();
-
-    let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-    let mut sink = Sink::try_new(&stream_handle).unwrap();
-
-    let assets = load_ui_assets().await;
-
-    // State for new screens
-    let mut settings_state = SettingsState::new();
-    let mut analytics_state = AnalyticsState::new();
-    let mut practice_state = PracticeMenuState::new();
-
-    // Multiplayer and account state
-    let mut login_state = LoginState::new();
-    let mut register_state = RegisterState::new();
-    let mut multiplayer_lobby_state = MultiplayerLobbyState::new();
-    let mut profile_state = ProfileState::new();
-    let mut leaderboard_state = LeaderboardState::new();
-    let mut friends_state = FriendsState::new();
-    let mut community_hub_state = CommunityHubState::new();
-    let mut tournament_state = TournamentState::new();
-
-    // Multiplayer and account managers
-    let game_client = GameClient::new();
-    let account_manager = Arc::new(AccountManager::new(std::path::PathBuf::from("data")));
-    let game_coordinator = Arc::new(GameCoordinator::new());
-    let community_manager = Arc::new(CommunityManager::new());
-
-    // Load account data
-    let _ = account_manager.load_data();
-
-    // User session (will be populated after login)
-    let mut user_session: Option<UserSession> = None;
-
-    loop {
-        state = match state {
-            // Multiplayer and account states
-            GameState::Login => handle_login_state(&mut login_state, &assets, &account_manager, &mut user_session),
-
-            GameState::Register => handle_register_state(&mut register_state, &assets, &account_manager),
-
-            GameState::MultiplayerLobby => handle_multiplayer_lobby_state(
-                &mut multiplayer_lobby_state,
-                &assets,
-                &game_client,
-                &user_session
-            ),
-
-            GameState::Profile => handle_profile_state(&mut profile_state, &assets, &account_manager, &user_session),
-
-            GameState::Leaderboard => handle_leaderboard_state(&mut leaderboard_state, &assets, &account_manager),
-
-            GameState::Friends => handle_friends_state(&mut friends_state, &assets, &account_manager, &user_session),
-
-            GameState::CommunityHub => handle_community_hub_state(&mut community_hub_state, &assets, &community_manager, &user_session),
-
-            GameState::Tournament => handle_tournament_state(&mut tournament_state, &assets, &community_manager, &user_session),
-
-            GameState::Menu => handle_menu_state(&assets, &mut songs, &mut config),
-            
-            GameState::SongSelection => handle_song_selection_state(
-                &mut selected_song, 
-                &songs, 
-                &assets,
-                &mut config
-            ),
-            
-            GameState::PracticeMenu => handle_practice_menu_state(
-                &mut practice_state,
-                &songs,
-                &assets,
-                &mut config
-            ),
-            
-            GameState::Playing => handle_playing_state(&selected_song),
-            
-            GameState::Loading { rx, start_time } => {
-                handle_loading_state(
-                    rx, 
-                    start_time, 
-                    &selected_song, 
-                    &assets,
-                    &config
-                )
-            }
-            
-            GameState::ReadyToPlay { beats, ready_time, source } => {
-                handle_ready_to_play_state(
-                    beats, 
-                    ready_time, 
-                    source, 
-                    &mut sink, 
-                    &assets,
-                    &config,
-                    &selected_song
-                )
-            }
-            
-            GameState::Visualizing(vis_state) => handle_visualizing_state(
-                vis_state, 
-                &mut sink, 
-                &assets,
-                &config,
-                &mut analytics
-            ),
-            
-            GameState::End(end_state) => handle_end_state(end_state, &assets),
-            
-            GameState::Settings => handle_settings_state(
-                &mut settings_state, 
-                &mut config, 
-                &assets
-            ),
-            
-            GameState::Analytics => handle_analytics_state(
-                &mut analytics_state, 
-                &analytics, 
-                &assets
-            ),
-            
-            GameState::Exit => {
-                // Save before exit
-                config.save();
-                analytics.save();
-                break;
-            }
+                0.0
+            },
+            grade: if let Some(ref session) = active_session {
+                session.grade.clone()
+            } else {
+                crate::analytics::Grade::F
+            },
+            full_combo: visualizing_data.state.max_combo > 0
+                && visualizing_data
+                    .state
+                    .circles
+                    .iter()
+                    .all(|c| c.hit || c.missed)
+                && visualizing_data
+                    .state
+                    .circles
+                    .iter()
+                    .filter(|c| c.missed)
+                    .count()
+                    == 0,
+            song_name: visualizing_data.state.song_name.clone(),
+            practice_mode: visualizing_data.state.practice_mode,
+            playback_speed: visualizing_data.state.playback_speed,
+            new_best: false,
+            previous_best: 0,
+            game_mode: visualizing_data.state.game_settings.mode,
+            difficulty: visualizing_data.state.game_settings.difficulty,
+            modifiers: visualizing_data.state.game_settings.modifiers.clone(),
         };
 
-        next_frame().await;
+        if config.save_analytics {
+            if let Some(session) = active_session {
+                analytics.add_session(session);
+            }
+        }
+
+        commands.insert_resource(EndData { state: end_state });
+        next_state.set(AppState::End);
+    }
+}
+
+fn exit_visualizing(mut commands: Commands) {
+    commands.remove_resource::<VisualizingData>();
+}
+
+// ==================== END STATE ====================
+
+fn enter_end() {
+    // Setup end screen
+}
+
+fn update_end(
+    mut next_state: ResMut<NextState<AppState>>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mouse_input: Res<ButtonInput<MouseButton>>,
+) {
+    if keyboard.just_pressed(KeyCode::Escape) || keyboard.just_pressed(KeyCode::Enter) {
+        next_state.set(AppState::Menu);
+    }
+
+    if mouse_input.just_pressed(MouseButton::Left) {
+        next_state.set(AppState::Menu);
+    }
+}
+
+// ==================== SETTINGS STATE ====================
+
+fn enter_settings(mut settings_state: ResMut<SettingsState>) {
+    *settings_state = SettingsState::new();
+}
+
+fn update_settings(
+    mut next_state: ResMut<NextState<AppState>>,
+    settings_state: ResMut<SettingsState>,
+    mut config: ResMut<GameConfig>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+) {
+    if keyboard.just_pressed(KeyCode::Escape) {
+        config.save();
+        next_state.set(AppState::Menu);
+    }
+}
+
+// ==================== ANALYTICS STATE ====================
+
+fn enter_analytics(mut analytics_state: ResMut<AnalyticsState>) {
+    *analytics_state = AnalyticsState::new();
+}
+
+fn update_analytics(
+    mut next_state: ResMut<NextState<AppState>>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+) {
+    if keyboard.just_pressed(KeyCode::Escape) {
+        next_state.set(AppState::Menu);
+    }
+}
+
+// ==================== BEATMAP EDITOR STATE ====================
+
+fn enter_beatmap_editor(
+    mut editor_state: ResMut<EditorState>,
+    mut editor_ui: ResMut<EditorUIState>,
+) {
+    *editor_state = EditorState::new();
+    *editor_ui = EditorUIState::default();
+}
+
+// ==================== BEATMAP SELECTION STATE ====================
+
+#[derive(Debug, Clone, Resource, Default)]
+pub struct BeatmapSelectionState {
+    pub selected_beatmap: Option<String>,
+    pub scroll_pos: f32,
+}
+
+fn enter_beatmap_selection(
+    mut beatmap_assets: ResMut<BeatmapAssets>,
+    mut selection_state: ResMut<BeatmapSelectionState>,
+) {
+    // Reload beatmaps to get any new ones
+    if let Err(e) = beatmap_assets.load_all() {
+        eprintln!("Failed to reload beatmaps: {}", e);
+    }
+    *selection_state = BeatmapSelectionState::default();
+}
+
+fn setup_beatmap_selection_ui(
+    mut commands: Commands,
+    assets: Res<GameAssets>,
+    windows: Query<&Window>,
+    beatmap_assets: Res<BeatmapAssets>,
+) {
+    if let Ok(window) = windows.get_single() {
+        let screen_h = window.height();
+        let screen_w = window.width();
+
+        // Title
+        commands.spawn((
+            Text2d::new("Beatmap Editor - Select or Create"),
+            TextFont {
+                font: assets.cyberpunk_font.clone(),
+                font_size: CYBERPUNK_FONT_SIZE,
+                ..default()
+            },
+            TextColor(NEON_PINK.into()),
+            Transform::from_xyz(-screen_w / 2.0 + 20.0, screen_h / 2.0 - screen_h * 0.1, 1.0),
+            UiElement,
+        ));
+
+        // Beatmap list
+        let paths = beatmap_assets.get_all_paths();
+        for (i, path) in paths.iter().enumerate() {
+            let button_y =
+                screen_h / 2.0 - screen_h * 0.2 - (i as f32) * (SONG_ENTRY_HEIGHT + 20.0);
+
+            if let Some(beatmap) = beatmap_assets.get(path) {
+                let display_name = format!(
+                    "{} - {} [{}]",
+                    beatmap.metadata.artist,
+                    beatmap.metadata.title,
+                    beatmap.metadata.version
+                );
+
+                commands.spawn((
+                    Text2d::new(display_name),
+                    TextFont {
+                        font: assets.cyberpunk_font.clone(),
+                        font_size: CYBERPUNK_FONT_SIZE,
+                        ..default()
+                    },
+                    TextColor(Color::WHITE.into()),
+                    Transform::from_xyz(-screen_w / 2.0 + 50.0, button_y, 1.0),
+                    UiElement,
+                    BeatmapButton {
+                        path: (*path).clone(),
+                    },
+                ));
+            }
+        }
+
+        // Create new beatmap button
+        let new_y = screen_h / 2.0 - screen_h * 0.2 - (paths.len() as f32) * (SONG_ENTRY_HEIGHT + 20.0) - 30.0;
+        commands.spawn((
+            Text2d::new("+ Create New Beatmap"),
+            TextFont {
+                font: assets.cyberpunk_font.clone(),
+                font_size: CYBERPUNK_FONT_SIZE,
+                ..default()
+            },
+            TextColor(NEON_GREEN.into()),
+            Transform::from_xyz(-screen_w / 2.0 + 50.0, new_y, 1.0),
+            UiElement,
+            CreateBeatmapButton,
+        ));
+
+        // Back button text
+        commands.spawn((
+            Text2d::new("Press ESC to go back"),
+            TextFont {
+                font: assets.cyberpunk_font.clone(),
+                font_size: 16.0,
+                ..default()
+            },
+            TextColor(Color::srgba(1.0, 1.0, 1.0, 0.5).into()),
+            Transform::from_xyz(-screen_w / 2.0 + 20.0, -screen_h / 2.0 + 20.0, 1.0),
+            UiElement,
+        ));
+    }
+}
+
+#[derive(Component)]
+pub struct BeatmapButton {
+    pub path: String,
+}
+
+#[derive(Component)]
+pub struct CreateBeatmapButton;
+
+fn handle_beatmap_selection(
+    mut next_state: ResMut<NextState<AppState>>,
+    mut editor_state: ResMut<EditorState>,
+    mut beatmap_assets: ResMut<BeatmapAssets>,
+    buttons: Query<(&Transform, &BeatmapButton), With<Text2d>>,
+    create_buttons: Query<&Transform, (With<CreateBeatmapButton>, With<Text2d>)>,
+    windows: Query<&Window>,
+    mouse_input: Res<ButtonInput<MouseButton>>,
+) {
+    if let Ok(window) = windows.get_single() {
+        if let Some(cursor_pos) = window.cursor_position() {
+            let world_x = cursor_pos.x - window.width() / 2.0;
+            let world_y = window.height() / 2.0 - cursor_pos.y;
+
+            // Check beatmap buttons
+            for (transform, button) in buttons.iter() {
+                let rect = Rect::from_center_size(
+                    transform.translation.truncate(),
+                    Vec2::new(400.0, SONG_ENTRY_HEIGHT),
+                );
+
+                if rect.contains(Vec2::new(world_x, world_y)) {
+                    if mouse_input.just_pressed(MouseButton::Left) {
+                        // Set current beatmap and enter editor
+                        beatmap_assets.set_current(Some(button.path.clone()));
+                        editor_state.current_beatmap_path = Some(button.path.clone());
+                        next_state.set(AppState::BeatmapEditor);
+                    }
+                }
+            }
+
+            // Check create new button
+            for transform in create_buttons.iter() {
+                let rect = Rect::from_center_size(
+                    transform.translation.truncate(),
+                    Vec2::new(300.0, SONG_ENTRY_HEIGHT),
+                );
+
+                if rect.contains(Vec2::new(world_x, world_y)) {
+                    if mouse_input.just_pressed(MouseButton::Left) {
+                        // Create a new beatmap with default values
+                        use crate::beatmap::Beatmap;
+                        let timestamp = std::time::SystemTime::now()
+                            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs();
+                        let new_path = format!("src/assets/beatmaps/new_beatmap_{}.json", timestamp);
+                        let new_beatmap = Beatmap::new(
+                            "New Song".to_string(),
+                            "Unknown Artist".to_string(),
+                            "src/assets/music/".to_string(),
+                        );
+                        beatmap_assets.add(new_path.clone(), new_beatmap);
+                        beatmap_assets.set_current(Some(new_path.clone()));
+                        editor_state.current_beatmap_path = Some(new_path);
+                        next_state.set(AppState::BeatmapEditor);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn update_beatmap_selection(
+    mut next_state: ResMut<NextState<AppState>>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+) {
+    if keyboard.just_pressed(KeyCode::Escape) {
+        next_state.set(AppState::Menu);
+    }
+}
+
+// ==================== RENDERING SYSTEMS ====================
+
+fn render_game_circles(mut commands: Commands, visualizing_data: Res<VisualizingData>) {
+    let base_elapsed = visualizing_data.start_time.elapsed().as_secs_f64();
+    let elapsed = if visualizing_data.state.playback_speed != 1.0 {
+        base_elapsed * visualizing_data.state.playback_speed as f64
+    } else {
+        base_elapsed
+    };
+
+    draw_circles_bevy(
+        &mut commands,
+        &visualizing_data.state.circles,
+        elapsed,
+        SHRINK_TIME,
+        &visualizing_data.state.game_settings,
+    );
+}
+
+fn render_game_floating_texts(
+    mut commands: Commands,
+    mut visualizing_data: ResMut<VisualizingData>,
+    assets: Res<GameAssets>,
+) {
+    let base_elapsed = visualizing_data.start_time.elapsed().as_secs_f64();
+    let elapsed = if visualizing_data.state.playback_speed != 1.0 {
+        base_elapsed * visualizing_data.state.playback_speed as f64
+    } else {
+        base_elapsed
+    };
+
+    draw_floating_texts_bevy(
+        &mut commands,
+        &mut visualizing_data.state.floating_texts,
+        elapsed,
+        &assets,
+    );
+}
+
+fn render_game_score(
+    mut commands: Commands,
+    visualizing_data: Res<VisualizingData>,
+    assets: Res<GameAssets>,
+) {
+    draw_score_bevy(
+        &mut commands,
+        visualizing_data.state.score,
+        visualizing_data.state.combo,
+        visualizing_data.state.max_combo,
+        &assets,
+    );
+}
+
+/// Handle key hits with mouse position
+fn handle_key_hits_with_mouse(
+    circles: &mut Vec<structs::GameCircle>,
+    elapsed: f64,
+    vis_state: &mut VisualizingState,
+    shrink_time: f64,
+    config: &GameConfig,
+    mouse_pos: Vec2,
+) {
+    // Find the closest hittable circle
+    let mut best_circle_idx: Option<usize> = None;
+    let mut best_distance = f32::MAX;
+
+    for (idx, circle) in circles.iter().enumerate() {
+        if circle.hit || circle.missed {
+            continue;
+        }
+
+        if let Some(radius) = circle_radius(circle, elapsed, shrink_time) {
+            let distance = mouse_pos.distance(circle.position);
+            if distance < radius && distance < best_distance {
+                best_distance = distance;
+                best_circle_idx = Some(idx);
+            }
+        }
+    }
+
+    // Process the hit
+    if let Some(idx) = best_circle_idx {
+        let circle = &mut circles[idx];
+        circle.hit = true;
+
+        let hit_time_diff = (elapsed - circle.hit_time).abs();
+        let points = calculate_score_from_timing(hit_time_diff, &vis_state.game_settings);
+
+        // Record the hit with timing
+        let timing_ms = (hit_time_diff * 1000.0) as f32;
+        vis_state.record_hit(points, timing_ms);
+
+        // Add floating text
+        let (text, color) = match points {
+            300 => ("Perfect!", (0.0, 1.0, 0.5)),
+            100 => ("Good!", (0.0, 0.75, 1.0)),
+            50 => ("Okay", (1.0, 1.0, 0.0)),
+            _ => ("Miss", (1.0, 0.0, 0.0)),
+        };
+
+        vis_state.floating_texts.push(FloatingText {
+            text: text.to_string(),
+            position: circle.position,
+            spawn_time: elapsed,
+            duration: 1.0,
+            color,
+        });
     }
 }

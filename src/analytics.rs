@@ -1,5 +1,6 @@
 // src/analytics.rs
 
+use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -7,7 +8,7 @@ use std::path::Path;
 use std::time::SystemTime;
 
 /// Analytics data for tracking player performance
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Resource)]
 pub struct Analytics {
     /// Unique player identifier
     pub player_id: String,
@@ -87,7 +88,9 @@ impl HitStats {
     /// Get grade based on accuracy
     pub fn grade(&self) -> Grade {
         let accuracy = self.accuracy();
-        if accuracy >= 95.0 {
+        if accuracy >= 100.0 && self.misses == 0 {
+            Grade::AAA
+        } else if accuracy >= 95.0 {
             Grade::SS
         } else if accuracy >= 90.0 {
             Grade::S
@@ -106,6 +109,7 @@ impl HitStats {
 /// Performance grade
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Grade {
+    AAA,
     SS,
     S,
     A,
@@ -119,6 +123,7 @@ impl Grade {
     /// Get grade as string
     pub fn as_str(&self) -> &'static str {
         match self {
+            Grade::AAA => "AAA",
             Grade::SS => "SS",
             Grade::S => "S",
             Grade::A => "A",
@@ -132,6 +137,7 @@ impl Grade {
     /// Get grade color
     pub fn color(&self) -> (f32, f32, f32) {
         match self {
+            Grade::AAA => (1.0, 0.9, 0.3), // Platinum/Gold mix
             Grade::SS => (1.0, 0.84, 0.0), // Gold
             Grade::S => (1.0, 0.5, 0.0),   // Orange
             Grade::A => (0.0, 1.0, 0.0),   // Green
@@ -512,6 +518,13 @@ impl Analytics {
                 0u32,
             ),
             (
+                "aaa_grade",
+                "AAA Rank",
+                "Get an AAA grade (perfect score, no misses)",
+                AchievementCategory::Score,
+                0u32,
+            ),
+            (
                 "ss_grade",
                 "SS Rank",
                 "Get an SS grade",
@@ -534,6 +547,7 @@ impl Analytics {
                         self.total_games_played >= threshold
                     }
                     "perfect_accuracy" => self.accuracy_history.iter().any(|&a| a >= 100.0),
+                    "aaa_grade" => self.recent_sessions.iter().any(|s| s.grade == Grade::AAA),
                     "ss_grade" => self.recent_sessions.iter().any(|s| s.grade == Grade::SS),
                     "full_combo" => self.recent_sessions.iter().any(|s| s.full_combo),
                     _ => false,
@@ -590,13 +604,14 @@ impl Analytics {
             .iter()
             .map(|s| s.grade.clone())
             .min_by_key(|g| match g {
-                Grade::SS => 0,
-                Grade::S => 1,
-                Grade::A => 2,
-                Grade::B => 3,
-                Grade::C => 4,
-                Grade::D => 5,
-                Grade::F => 6,
+                Grade::AAA => 0,
+                Grade::SS => 1,
+                Grade::S => 2,
+                Grade::A => 3,
+                Grade::B => 4,
+                Grade::C => 5,
+                Grade::D => 6,
+                Grade::F => 7,
             })
     }
 
@@ -655,7 +670,7 @@ fn generate_player_id() -> String {
 }
 
 /// Analytics display state
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Resource)]
 pub struct AnalyticsState {
     /// Current view tab
     pub current_view: AnalyticsView,

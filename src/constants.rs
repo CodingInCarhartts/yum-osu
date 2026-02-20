@@ -1,6 +1,7 @@
 // src/constants.rs
 
-use macroquad::prelude::*;
+use bevy::prelude::*;
+use bevy::window::WindowTheme;
 
 // Timing and shrink behavior
 pub const SHRINK_TIME: f64 = 1.5; // Time it takes for a circle to shrink
@@ -11,8 +12,8 @@ pub const OUTLINE_THICKNESS: f32 = 2.0; // Thickness of the circle outline
 pub const SCORE_FONT_SIZE: f32 = 40.0; // Size of the score font
 
 // Outlines and backgrounds
-pub const OUTLINE_COLOR: Color = Color::new(1.0, 1.0, 1.0, 0.5); // Semi-transparent black outline
-pub const DARK_BACKGROUND: Color = Color::new(0.05, 0.05, 0.1, 1.0); // Dark background to enhance neon colors
+pub const OUTLINE_COLOR: Color = Color::srgba(1.0, 1.0, 1.0, 0.5); // Semi-transparent white outline
+pub const DARK_BACKGROUND: Color = Color::srgba(0.05, 0.05, 0.1, 1.0); // Dark background to enhance neon colors
 
 // Positioning for score display
 pub const DRAW_SCORE_X: f32 = 20.0; // X position for score
@@ -26,19 +27,13 @@ pub const FONT_SIZE: u16 = 30; // General font size for text
 pub const COUNTDOWN_DURATION: f64 = 5.0; // Countdown before game starts
 
 // Cyberpunk neon colors
-pub const NEON_PINK: Color = Color::new(1.0, 0.07, 0.58, 1.0); // Neon pink for active UI elements
-pub const NEON_BLUE: Color = Color::new(0.0, 0.75, 1.0, 1.0); // Neon blue for circles and background highlights
-pub const NEON_PURPLE: Color = Color::new(0.6, 0.0, 1.0, 1.0); // Neon purple for outlines and accents
-pub const NEON_GREEN: Color = Color::new(0.0, 1.0, 0.5, 1.0); // Neon green for success or active states
-pub const NEON_ORANGE: Color = Color::new(1.0, 0.5, 0.0, 1.0); // Neon orange for errors
-pub const NEON_CYAN: Color = Color::new(0.0, 1.0, 1.0, 1.0); // Neon cyan for highlights
-pub const NEON_YELLOW: Color = Color::new(1.0, 1.0, 0.0, 1.0); // Neon yellow for warnings and info
-pub const NEON_RED: Color = Color::new(1.0, 0.0, 0.0, 1.0); // Neon red for critical errors
-
-// Standard colors
-pub const GRAY: Color = Color::new(0.5, 0.5, 0.5, 1.0); // Gray for inactive elements
-pub const WHITE: Color = Color::new(1.0, 1.0, 1.0, 1.0); // White for text
-pub const BLACK: Color = Color::new(0.0, 0.0, 0.0, 1.0); // Black for backgrounds
+pub const NEON_PINK: Color = Color::srgba(1.0, 0.07, 0.58, 1.0); // Neon pink for active UI elements
+pub const NEON_BLUE: Color = Color::srgba(0.0, 0.75, 1.0, 1.0); // Neon blue for circles and background highlights
+pub const NEON_PURPLE: Color = Color::srgba(0.6, 0.0, 1.0, 1.0); // Neon purple for outlines and accents
+pub const NEON_GREEN: Color = Color::srgba(0.0, 1.0, 0.5, 1.0); // Neon green for success or active states
+pub const NEON_ORANGE: Color = Color::srgba(1.0, 0.5, 0.0, 1.0); // Neon orange for errors
+pub const NEON_YELLOW: Color = Color::srgba(1.0, 1.0, 0.0, 1.0); // Neon yellow
+pub const NEON_CYAN: Color = Color::srgba(0.0, 1.0, 1.0, 1.0); // Neon cyan
 
 // Font size specific to cyberpunk-styled text
 pub const CYBERPUNK_FONT_SIZE: f32 = 24.0; // Font size for UI text (song selection, buttons, etc.)
@@ -58,13 +53,13 @@ pub const WARNING_COLOR: Color = NEON_YELLOW;
 pub const ERROR_COLOR: Color = NEON_ORANGE;
 
 // Grade colors
-pub const GRADE_SS_COLOR: Color = Color::new(1.0, 0.84, 0.0, 1.0);
-pub const GRADE_S_COLOR: Color = Color::new(1.0, 0.5, 0.0, 1.0);
+pub const GRADE_SS_COLOR: Color = Color::srgba(1.0, 0.84, 0.0, 1.0);
+pub const GRADE_S_COLOR: Color = Color::srgba(1.0, 0.5, 0.0, 1.0);
 pub const GRADE_A_COLOR: Color = NEON_GREEN;
 pub const GRADE_B_COLOR: Color = NEON_BLUE;
 pub const GRADE_C_COLOR: Color = NEON_PURPLE;
 pub const GRADE_D_COLOR: Color = NEON_PINK;
-pub const GRADE_F_COLOR: Color = Color::new(1.0, 0.0, 0.0, 1.0);
+pub const GRADE_F_COLOR: Color = Color::srgba(1.0, 0.0, 0.0, 1.0);
 
 // Practice mode constants
 pub const MIN_PLAYBACK_SPEED: f32 = 0.25;
@@ -78,19 +73,16 @@ pub const COMBO_MILESTONES: [u32; 5] = [10, 25, 50, 100, 200];
 pub const PULSE_SPEED: f32 = 2.0;
 pub const GLOW_INTENSITY: f32 = 0.5;
 
-pub fn window_conf() -> Conf {
-    Conf {
-        window_title: "YumOsu!".to_owned(),
-        window_width: 1280,
-        window_height: 720,
-        window_resizable: true,
-        fullscreen: false,
-        high_dpi: true,
-        platform: miniquad::conf::Platform {
-            framebuffer_alpha: false,
-            swap_interval: Some(1), // Enable VSync
+/// Window configuration for Bevy
+pub fn window_config() -> WindowPlugin {
+    WindowPlugin {
+        primary_window: Some(Window {
+            title: "YumOsu!".to_owned(),
+            resolution: bevy::window::WindowResolution::new(1280.0, 720.0),
+            resizable: true,
+            window_theme: Some(WindowTheme::Dark),
             ..Default::default()
-        },
+        }),
         ..Default::default()
     }
 }
@@ -119,15 +111,16 @@ pub fn hex_to_color(hex: &str) -> Option<Color> {
     let g = u8::from_str_radix(&hex[2..4], 16).ok()? as f32 / 255.0;
     let b = u8::from_str_radix(&hex[4..6], 16).ok()? as f32 / 255.0;
 
-    Some(Color::new(r, g, b, 1.0))
+    Some(Color::srgba(r, g, b, 1.0))
 }
 
 /// Color to hex string conversion
 pub fn color_to_hex(color: Color) -> String {
+    let linear = color.to_linear();
     format!(
         "#{:02X}{:02X}{:02X}",
-        (color.r * 255.0) as u8,
-        (color.g * 255.0) as u8,
-        (color.b * 255.0) as u8
+        (linear.red * 255.0) as u8,
+        (linear.green * 255.0) as u8,
+        (linear.blue * 255.0) as u8
     )
 }
